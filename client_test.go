@@ -92,3 +92,43 @@ func TestClientTimestampIsRFC3339UTC(t *testing.T) {
 		t.Errorf("timestamp = %q, want %q", got, want)
 	}
 }
+
+// TestNewClientRejectsUnusableBaseURL — only base.Host was checked, so a URL
+// that net/url parses but net/http can never fetch was accepted at
+// construction and failed later, per call, with a confusing error. A base
+// carrying a query or fragment is worse than useless: paths are appended by
+// string concatenation, so "http://x?a=1" + "/api/v1/cookbooks" produces
+// "http://x?a=1/api/v1/cookbooks".
+func TestNewClientRejectsUnusableBaseURL(t *testing.T) {
+	for _, raw := range []string{
+		"ftp://supermarket.test",
+		"file:///etc/passwd",
+		"://bad",
+		"supermarket.test",    // no scheme at all
+		"http://x?a=1",        // query would be concatenated into the path
+		"https://x/base#frag", // ditto for a fragment
+	} {
+		t.Run(raw, func(t *testing.T) {
+			if _, err := NewClient(Config{BaseURL: raw}); err == nil {
+				t.Errorf("NewClient accepted an unusable BaseURL %q", raw)
+			}
+		})
+	}
+}
+
+// TestNewClientAcceptsUsableBaseURL scopes the rejection above.
+func TestNewClientAcceptsUsableBaseURL(t *testing.T) {
+	for _, raw := range []string{
+		"https://supermarket.chef.io",
+		"https://supermarket.chef.io/",
+		"http://localhost:8080",
+		"https://internal.test/supermarket",
+		"HTTPS://Supermarket.Test", // scheme comparison is case-insensitive
+	} {
+		t.Run(raw, func(t *testing.T) {
+			if _, err := NewClient(Config{BaseURL: raw}); err != nil {
+				t.Errorf("NewClient(%q) = %v, want it accepted", raw, err)
+			}
+		})
+	}
+}
