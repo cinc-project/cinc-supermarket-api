@@ -32,6 +32,10 @@ func (s *UniverseService) Get(ctx context.Context) (Universe, *Response, error) 
 // GetStream returns the universe body as a raw io.ReadCloser so the
 // caller can decode it incrementally with json.Decoder. The caller
 // owns closing the body.
+//
+// Streaming responses are not subject to the client's total-transaction
+// timeout — a multi-megabyte universe would otherwise be truncated
+// mid-read. Bound the download with ctx.
 func (s *UniverseService) GetStream(ctx context.Context) (io.ReadCloser, *Response, error) {
 	return s.client.stream(ctx, "/universe")
 }

@@ -147,6 +147,10 @@ func (s *CookbooksService) GetVersion(ctx context.Context, name, version string)
 // Download fetches the gzipped tarball for a cookbook version. The
 // caller owns closing the returned body. Like GetVersion the version
 // may be "latest" or any Semver form.
+//
+// The download is not subject to the client's total-transaction timeout,
+// which would otherwise truncate a large tarball mid-read. Bound it with
+// ctx.
 func (s *CookbooksService) Download(ctx context.Context, name, version string) (io.ReadCloser, *Response, error) {
 	return s.client.stream(ctx,
 		"/api/v1/cookbooks/"+url.PathEscape(name)+"/versions/"+url.PathEscape(versionPath(version))+"/download")

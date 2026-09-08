@@ -241,3 +241,75 @@ func TestStreamReturnsErrorWithoutBody(t *testing.T) {
 		t.Error("non-nil body returned alongside an error")
 	}
 }
+
+// TestStreamIsNotTruncatedByClientTimeout — http.Client.Timeout spans the
+// entire body read, not just the connect/header phase, so a shared 60s client
+// deadline silently truncates the two APIs that exist precisely to move large
+// payloads: /universe (tens of megabytes) and cookbook tarball downloads.
+// Streaming responses must be bounded by the caller's context and by
+// transport-level phase timeouts instead.
+func TestStreamIsNotTruncatedByClientTimeout(t *testing.T) {
+	const (
+		chunks   = 5
+		chunk    = "chunk"
+		perChunk = 60 * time.Millisecond
+	)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/universe", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		for range chunks {
+			_, _ = io.WriteString(w, chunk)
+			w.(http.Flusher).Flush()
+			time.Sleep(perChunk)
+		}
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	// The body takes ~300ms to arrive; the client deadline is well under that.
+	c, err := NewClient(Config{BaseURL: srv.URL},
+		WithHTTPClient(&http.Client{Timeout: 150 * time.Millisecond}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _, err := c.Universe.GetStream(context.Background())
+	if err != nil {
+		t.Fatalf("GetStream: %v", err)
+	}
+	defer body.Close()
+
+	n, err := io.Copy(io.Discard, body)
+	if err != nil {
+		t.Fatalf("reading stream: %v", err)
+	}
+	if want := int64(chunks * len(chunk)); n != want {
+		t.Errorf("streamed %d bytes, want %d (Client.Timeout truncated the body)", n, want)
+	}
+}
+
+// TestStreamStillHonorsContextCancellation — dropping the total-transaction
+// deadline must not leave streams unbounded; the caller's context is the
+// remaining brake and has to keep working.
+func TestStreamStillHonorsContextCancellation(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/universe", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := newTestClient(t, srv, false)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	body, _, err := c.Universe.GetStream(ctx)
+	if err != nil {
+		t.Fatalf("GetStream: %v", err)
+	}
+	defer body.Close()
+	if _, err := io.Copy(io.Discard, body); err == nil {
+		t.Error("expected the read to fail once the context deadline passed")
+	}
+}
