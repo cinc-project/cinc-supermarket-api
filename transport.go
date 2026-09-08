@@ -150,12 +150,21 @@ func doJSON[T any](ctx context.Context, c *Client, r request) (T, *Response, err
 // It deliberately uses c.streamClient rather than c.httpClient: the latter
 // carries a total-transaction Timeout that would truncate a large body
 // mid-read. Bound a stream with ctx instead.
-func (c *Client) stream(ctx context.Context, path string) (io.ReadCloser, *Response, error) {
+//
+// accept is the Accept header to advertise; the streaming callers want
+// different content types, so it is chosen per caller rather than fixed at
+// application/json the way doJSON does.
+//
+// Unlike doRaw this path performs no retries: the body is handed back
+// unread, so there is no safe point at which to discard a partial stream and
+// start over. WithMaxRetries does not apply here.
+func (c *Client) stream(ctx context.Context, path, accept string) (io.ReadCloser, *Response, error) {
 	u := c.baseURL.String() + path
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("supermarket: build request: %w", err)
 	}
+	httpReq.Header.Set("Accept", accept)
 	httpReq.Header.Set("User-Agent", c.opts.userAgent)
 	httpResp, err := c.streamClient.Do(httpReq)
 	if err != nil {
