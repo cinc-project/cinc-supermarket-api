@@ -396,3 +396,77 @@ func TestSignedClientStillLimitsRedirects(t *testing.T) {
 		t.Errorf("followed %d redirects, want the request capped near 10", n)
 	}
 }
+
+// TestStreamSendsAcceptHeader — every request through doJSON advertises
+// Accept: application/json, but the streaming path sent no Accept at all. The
+// two streaming callers want different things, so the header has to be chosen
+// per caller rather than hardcoded.
+func TestStreamSendsAcceptHeader(t *testing.T) {
+	var universeAccept, downloadAccept string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/universe", func(w http.ResponseWriter, r *http.Request) {
+		universeAccept = r.Header.Get("Accept")
+		_, _ = io.WriteString(w, `{}`)
+	})
+	mux.HandleFunc("/api/v1/cookbooks/nginx/versions/1_0_0/download", func(w http.ResponseWriter, r *http.Request) {
+		downloadAccept = r.Header.Get("Accept")
+		_, _ = io.WriteString(w, "tarball")
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := newTestClient(t, srv, false)
+	ctx := context.Background()
+
+	body, _, err := c.Universe.GetStream(ctx)
+	if err != nil {
+		t.Fatalf("GetStream: %v", err)
+	}
+	_ = body.Close()
+	if !strings.Contains(universeAccept, "application/json") {
+		t.Errorf("GetStream Accept = %q, want it to include application/json", universeAccept)
+	}
+
+	body, _, err = c.Cookbooks.Download(ctx, "nginx", "1.0.0")
+	if err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	_ = body.Close()
+	if downloadAccept == "" {
+		t.Error("Download sent no Accept header")
+	}
+	if strings.Contains(downloadAccept, "application/json") {
+		t.Errorf("Download Accept = %q, want a tarball type, not JSON", downloadAccept)
+	}
+}
+
+// TestStreamResponseExposesAnOpenBody pins what a streaming Response actually
+// carries. The Response doc comment claimed the body "has already been
+// consumed and closed by the time the caller sees the Response", which is true
+// for doJSON and false here — the whole point of the streaming path is that
+// the caller reads and closes it.
+func TestStreamResponseExposesAnOpenBody(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/universe", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"a":{}}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := newTestClient(t, srv, false)
+
+	body, resp, err := c.Universe.GetStream(context.Background())
+	if err != nil {
+		t.Fatalf("GetStream: %v", err)
+	}
+	t.Cleanup(func() { _ = body.Close() })
+
+	if resp.HTTPResponse.Body != body {
+		t.Error("resp.HTTPResponse.Body is not the ReadCloser handed to the caller")
+	}
+	got, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("the body was not readable: %v", err)
+	}
+	if string(got) != `{"a":{}}` {
+		t.Errorf("read %q, want the full document", got)
+	}
+}

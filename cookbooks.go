@@ -156,6 +156,11 @@ func (s *CookbooksService) GetVersion(ctx context.Context, name, version string)
 	return &v, resp, nil
 }
 
+// tarballAccept is the Accept header for cookbook downloads. Supermarket
+// redirects these to object storage, which ignores Accept, so the wildcard
+// keeps a stricter intermediary from answering 406.
+const tarballAccept = "application/x-gzip, application/octet-stream, */*"
+
 // Download fetches the gzipped tarball for a cookbook version. The
 // caller owns closing the returned body. Like GetVersion the version
 // may be "latest" or any Semver form.
@@ -171,7 +176,8 @@ func (s *CookbooksService) Download(ctx context.Context, name, version string) (
 		return nil, nil, err
 	}
 	return s.client.stream(ctx,
-		"/api/v1/cookbooks/"+url.PathEscape(name)+"/versions/"+url.PathEscape(versionPath(version))+"/download")
+		"/api/v1/cookbooks/"+url.PathEscape(name)+"/versions/"+url.PathEscape(versionPath(version))+"/download",
+		tarballAccept)
 }
 
 // Share uploads a new cookbook version. tarball is the gzipped tar of
