@@ -23,13 +23,15 @@ type options struct {
 	userAgent     string
 	skipTLSVerify bool
 	maxRetries    int
+	retryBackoff  time.Duration
 }
 
 func defaultOptions() options {
 	return options{
-		httpClient: &http.Client{Timeout: 60 * time.Second},
-		userAgent:  "cinc-supermarket-go",
-		maxRetries: 2,
+		httpClient:   &http.Client{Timeout: 60 * time.Second},
+		userAgent:    "cinc-supermarket-go",
+		maxRetries:   2,
+		retryBackoff: 250 * time.Millisecond,
 	}
 }
 
@@ -55,6 +57,17 @@ func WithUserAgent(ua string) Option { return func(o *options) { o.userAgent = u
 // NewClient error rather than a silent downgrade to http.DefaultTransport.
 func WithSkipTLSVerify(skip bool) Option {
 	return func(o *options) { o.skipTLSVerify = skip }
+}
+
+// WithRetryBackoff sets the base delay between retries of an idempotent
+// (GET) request. Waits grow exponentially from this value and are jittered.
+// Zero disables waiting entirely; a negative value is ignored.
+func WithRetryBackoff(d time.Duration) Option {
+	return func(o *options) {
+		if d >= 0 {
+			o.retryBackoff = d
+		}
+	}
 }
 
 // WithMaxRetries sets the retry count for idempotent (GET) requests.
