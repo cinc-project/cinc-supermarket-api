@@ -1,6 +1,7 @@
 package supermarket
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -10,7 +11,9 @@ import (
 //
 // Numeric base segments are compared numerically (so 1.10.0 > 1.2.0), missing
 // trailing segments are treated as zero (1.0 == 1.0.0), and an empty string
-// sorts below everything. A clean release outranks any pre-release of the same
+// sorts below everything. A base segment that is not numeric is compared
+// lexically and ranks above a numeric one, so a malformed version such as
+// 1.0.x is ordered consistently rather than collapsing onto 1.0.0. A clean release outranks any pre-release of the same
 // base; pre-release identifiers are compared per semver §11 (dot-separated,
 // all-numeric identifiers compared numerically and ranking below alphanumeric
 // ones, with a larger set of fields winning when all earlier ones are equal).
@@ -29,7 +32,7 @@ func CompareVersions(a, b string) int {
 	}
 	abase, apre := splitPrerelease(a)
 	bbase, bpre := splitPrerelease(b)
-	if c := compareNumericSegments(abase, bbase); c != 0 {
+	if c := compareBaseSegments(abase, bbase); c != 0 {
 		return c
 	}
 	switch {
@@ -56,13 +59,21 @@ func LatestVersion(versions []string) string {
 	return latest
 }
 
+// versionish matches a bare version string in either the dotted or the
+// underscore form Supermarket uses in its paths, with an optional
+// pre-release or build suffix.
+var versionish = regexp.MustCompile(`^[0-9]+(?:[._][0-9]+)*(?:[-+][0-9A-Za-z.\-]+)?$`)
+
 // VersionFromURL extracts the version segment from a Supermarket version URL
 // like https://supermarket.chef.io/api/v1/cookbooks/nginx/versions/12_0_4
 // (optionally followed by /download or a query), returning "12.0.4".
 // Supermarket encodes dots as underscores in these paths; either form is
-// tolerated. A string that doesn't look like a version URL is returned with
-// underscores normalized to dots, so a bare "12.0.4" or "12_0_4" passes
-// through.
+// tolerated, so a bare "12.0.4" or "12_0_4" passes through unchanged.
+//
+// Input that is not a version returns "". Previously the underscore-to-dot
+// rewrite was applied unconditionally to whatever was left after trimming,
+// which turned "my_cookbook" into "my.cookbook" and a URL with no /versions/
+// segment into "https:" — plausible-looking values that were never versions.
 func VersionFromURL(s string) string {
 	if s == "" {
 		return ""
@@ -70,9 +81,15 @@ func VersionFromURL(s string) string {
 	tail := s
 	if i := strings.LastIndex(tail, "/versions/"); i >= 0 {
 		tail = tail[i+len("/versions/"):]
+	} else if strings.ContainsAny(tail, "/:") {
+		// Shaped like a URL, but carries no version segment to extract.
+		return ""
 	}
-	if i := strings.IndexAny(tail, "/?"); i >= 0 {
+	if i := strings.IndexAny(tail, "/?#"); i >= 0 {
 		tail = tail[:i]
+	}
+	if !versionish.MatchString(tail) {
+		return ""
 	}
 	return strings.ReplaceAll(tail, "_", ".")
 }
@@ -86,32 +103,34 @@ func splitPrerelease(v string) (base, pre string) {
 	return base, pre
 }
 
-func compareNumericSegments(a, b string) int {
+// compareBaseSegments compares the dot-separated numeric bases field by
+// field. Fields are compared with the same rule as pre-release identifiers:
+// numerically when both are numeric, and otherwise lexically with a numeric
+// field ranking below an alphanumeric one (semver §11).
+//
+// The alternative — parsing each field with Atoi and treating a failure as
+// zero — made every malformed field collapse onto 0, so "1.0.x" and "1.0.0"
+// compared equal. A comparator that reports "equal" for strings that differ
+// makes LatestVersion and any sort built on it unpredictable.
+func compareBaseSegments(a, b string) int {
 	ap := strings.Split(a, ".")
 	bp := strings.Split(b, ".")
 	n := max(len(ap), len(bp))
 	for i := range n {
-		ai := segmentInt(ap, i)
-		bi := segmentInt(bp, i)
-		if ai != bi {
-			if ai < bi {
-				return -1
-			}
-			return 1
+		if c := comparePrereleaseIdent(segment(ap, i), segment(bp, i)); c != 0 {
+			return c
 		}
 	}
 	return 0
 }
 
-func segmentInt(parts []string, i int) int {
+// segment returns the i'th field, or "0" past the end so that a missing
+// trailing field reads as zero and 1.0 equals 1.0.0.
+func segment(parts []string, i int) string {
 	if i >= len(parts) {
-		return 0
+		return "0"
 	}
-	n, err := strconv.Atoi(parts[i])
-	if err != nil {
-		return 0
-	}
-	return n
+	return parts[i]
 }
 
 // comparePrerelease compares two dot-separated pre-release strings per semver
