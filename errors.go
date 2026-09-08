@@ -16,6 +16,10 @@ var (
 	ErrForbidden            = errors.New("supermarket: forbidden")
 	ErrInvalidData          = errors.New("supermarket: invalid data")
 	ErrUnauthenticatedWrite = errors.New("supermarket: write requires Username and Key")
+	// ErrInvalidArgument is returned locally, without contacting the server,
+	// when a caller passes a blank value for a required path segment such as
+	// a cookbook name or version.
+	ErrInvalidArgument = errors.New("supermarket: invalid argument")
 )
 
 // ErrorResponse describes a non-2xx response from Supermarket.

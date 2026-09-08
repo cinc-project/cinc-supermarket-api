@@ -44,6 +44,9 @@ type UsersService struct{ client *Client }
 
 // Get returns a user profile by username.
 func (s *UsersService) Get(ctx context.Context, username string) (*User, *Response, error) {
+	if err := requireArg("username", username); err != nil {
+		return nil, nil, err
+	}
 	u, resp, err := doJSON[User](ctx, s.client, request{
 		method: http.MethodGet,
 		path:   "/api/v1/users/" + url.PathEscape(username),

@@ -112,6 +112,9 @@ func (s *CookbooksService) List(ctx context.Context, opts ListOptions) (Page[Coo
 
 // Get returns the full record for a single cookbook by name.
 func (s *CookbooksService) Get(ctx context.Context, name string) (*Cookbook, *Response, error) {
+	if err := requireArg("cookbook name", name); err != nil {
+		return nil, nil, err
+	}
 	cb, resp, err := doJSON[Cookbook](ctx, s.client, request{
 		method: http.MethodGet,
 		path:   "/api/v1/cookbooks/" + url.PathEscape(name),
@@ -124,6 +127,9 @@ func (s *CookbooksService) Get(ctx context.Context, name string) (*Cookbook, *Re
 
 // Contingent returns cookbooks that depend on the named cookbook.
 func (s *CookbooksService) Contingent(ctx context.Context, name string) ([]CookbookSummary, *Response, error) {
+	if err := requireArg("cookbook name", name); err != nil {
+		return nil, nil, err
+	}
 	return doJSON[[]CookbookSummary](ctx, s.client, request{
 		method: http.MethodGet,
 		path:   "/api/v1/cookbooks/" + url.PathEscape(name) + "/contingent",
@@ -134,6 +140,12 @@ func (s *CookbooksService) Contingent(ctx context.Context, name string) ([]Cookb
 // "latest" or a Semver string in either dotted ("1.2.3") or underscore
 // ("1_2_3") form; the dotted form is converted automatically.
 func (s *CookbooksService) GetVersion(ctx context.Context, name, version string) (*CookbookVersion, *Response, error) {
+	if err := requireArg("cookbook name", name); err != nil {
+		return nil, nil, err
+	}
+	if err := requireArg("version", version); err != nil {
+		return nil, nil, err
+	}
 	v, resp, err := doJSON[CookbookVersion](ctx, s.client, request{
 		method: http.MethodGet,
 		path:   "/api/v1/cookbooks/" + url.PathEscape(name) + "/versions/" + url.PathEscape(versionPath(version)),
@@ -148,6 +160,12 @@ func (s *CookbooksService) GetVersion(ctx context.Context, name, version string)
 // caller owns closing the returned body. Like GetVersion the version
 // may be "latest" or any Semver form.
 func (s *CookbooksService) Download(ctx context.Context, name, version string) (io.ReadCloser, *Response, error) {
+	if err := requireArg("cookbook name", name); err != nil {
+		return nil, nil, err
+	}
+	if err := requireArg("version", version); err != nil {
+		return nil, nil, err
+	}
 	return s.client.stream(ctx,
 		"/api/v1/cookbooks/"+url.PathEscape(name)+"/versions/"+url.PathEscape(versionPath(version))+"/download")
 }
@@ -157,6 +175,9 @@ func (s *CookbooksService) Download(ctx context.Context, name, version string) (
 // category is the Supermarket category string (e.g. "Web Servers").
 // Requires Username and Key on the Client.
 func (s *CookbooksService) Share(ctx context.Context, name, category string, tarball io.Reader) (*Cookbook, *Response, error) {
+	if err := requireArg("cookbook name", name); err != nil {
+		return nil, nil, err
+	}
 	if !s.client.canSign() {
 		return nil, nil, ErrUnauthenticatedWrite
 	}
@@ -183,6 +204,9 @@ func (s *CookbooksService) Share(ctx context.Context, name, category string, tar
 // Delete removes an entire cookbook from Supermarket. The caller must
 // own the cookbook (or be a Supermarket admin).
 func (s *CookbooksService) Delete(ctx context.Context, name string) (*Cookbook, *Response, error) {
+	if err := requireArg("cookbook name", name); err != nil {
+		return nil, nil, err
+	}
 	cb, resp, err := doJSON[Cookbook](ctx, s.client, request{
 		method: http.MethodDelete,
 		path:   "/api/v1/cookbooks/" + url.PathEscape(name),
@@ -196,6 +220,12 @@ func (s *CookbooksService) Delete(ctx context.Context, name string) (*Cookbook, 
 
 // DeleteVersion removes a single version of a cookbook.
 func (s *CookbooksService) DeleteVersion(ctx context.Context, name, version string) (*CookbookVersion, *Response, error) {
+	if err := requireArg("cookbook name", name); err != nil {
+		return nil, nil, err
+	}
+	if err := requireArg("version", version); err != nil {
+		return nil, nil, err
+	}
 	v, resp, err := doJSON[CookbookVersion](ctx, s.client, request{
 		method: http.MethodDelete,
 		path:   "/api/v1/cookbooks/" + url.PathEscape(name) + "/versions/" + url.PathEscape(versionPath(version)),
