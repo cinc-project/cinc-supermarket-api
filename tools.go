@@ -53,6 +53,9 @@ func (s *ToolsService) List(ctx context.Context, opts ToolsListOptions) (Page[To
 
 // Get returns a single tool by slug.
 func (s *ToolsService) Get(ctx context.Context, slug string) (*Tool, *Response, error) {
+	if err := requireArg("tool slug", slug); err != nil {
+		return nil, nil, err
+	}
 	t, resp, err := doJSON[Tool](ctx, s.client, request{
 		method: http.MethodGet,
 		path:   "/api/v1/tools/" + url.PathEscape(slug),
