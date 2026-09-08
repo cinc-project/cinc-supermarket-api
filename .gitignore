@@ -1,0 +1,13 @@
+# Editor swap/backup files
+*.sw?
+*~
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
+
+# Go build and test output
+coverage.out
+coverage.html
+*.test
