@@ -143,6 +143,10 @@ func doJSON[T any](ctx context.Context, c *Client, r request) (T, *Response, err
 // stream sends a GET and returns the response body as an io.ReadCloser
 // for callers that want to decode lazily (e.g. /universe or cookbook
 // tarball downloads). The caller is responsible for closing the body.
+//
+// It deliberately uses c.streamClient rather than c.httpClient: the latter
+// carries a total-transaction Timeout that would truncate a large body
+// mid-read. Bound a stream with ctx instead.
 func (c *Client) stream(ctx context.Context, path string) (io.ReadCloser, *Response, error) {
 	u := c.baseURL.String() + path
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -150,7 +154,7 @@ func (c *Client) stream(ctx context.Context, path string) (io.ReadCloser, *Respo
 		return nil, nil, fmt.Errorf("supermarket: build request: %w", err)
 	}
 	httpReq.Header.Set("User-Agent", c.opts.userAgent)
-	httpResp, err := c.httpClient.Do(httpReq)
+	httpResp, err := c.streamClient.Do(httpReq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("supermarket: GET %s: %w", path, err)
 	}

@@ -20,8 +20,12 @@ type Client struct {
 	username   string
 	key        *rsa.PrivateKey
 	httpClient *http.Client
-	opts       options
-	clock      func() time.Time
+	// streamClient is httpClient without a total-transaction deadline; it
+	// serves the endpoints whose body is read incrementally. See
+	// newStreamClient.
+	streamClient *http.Client
+	opts         options
+	clock        func() time.Time
 
 	// Services.
 	Cookbooks *CookbooksService
@@ -51,12 +55,13 @@ func NewClient(cfg Config, opts ...Option) (*Client, error) {
 		hc = withInsecureTLS(hc)
 	}
 	c := &Client{
-		baseURL:    base,
-		username:   cfg.Username,
-		key:        cfg.Key,
-		httpClient: hc,
-		opts:       o,
-		clock:      time.Now,
+		baseURL:      base,
+		username:     cfg.Username,
+		key:          cfg.Key,
+		httpClient:   hc,
+		streamClient: newStreamClient(hc),
+		opts:         o,
+		clock:        time.Now,
 	}
 	c.Cookbooks = &CookbooksService{client: c}
 	c.Search = &SearchService{client: c}
@@ -88,6 +93,49 @@ func withInsecureTLS(hc *http.Client) *http.Client {
 		CheckRedirect: hc.CheckRedirect,
 		Jar:           hc.Jar,
 	}
+}
+
+// defaultStreamHeaderTimeout bounds how long a streaming request waits for
+// response headers when the caller's client has no total timeout of its own
+// to borrow the value from.
+const defaultStreamHeaderTimeout = 60 * time.Second
+
+// newStreamClient derives the *http.Client used for responses whose body the
+// caller reads incrementally (/universe, cookbook tarball downloads) from hc.
+//
+// http.Client.Timeout is a whole-transaction deadline: the timer keeps running
+// after Do returns and interrupts reading of Response.Body. That makes it the
+// wrong tool for the streaming endpoints, where the body is the large part —
+// the 60s default silently truncates a multi-megabyte /universe on a slow
+// link, and the caller sees a confusing mid-read timeout instead of data.
+//
+// So the streaming client drops Timeout and moves the bound onto the phases
+// that genuinely should be bounded: connect and response-header wait, both on
+// the transport. The caller's context remains the brake on the overall
+// operation and still aborts an in-flight read.
+func newStreamClient(hc *http.Client) *http.Client {
+	sc := *hc
+	sc.Timeout = 0
+
+	headerTimeout := hc.Timeout
+	if headerTimeout <= 0 {
+		headerTimeout = defaultStreamHeaderTimeout
+	}
+	base, ok := hc.Transport.(*http.Transport)
+	if !ok {
+		// A custom RoundTripper owns its own timeouts; leave it alone and
+		// settle for having removed the total-transaction deadline.
+		if hc.Transport != nil {
+			return &sc
+		}
+		base = http.DefaultTransport.(*http.Transport)
+	}
+	tr := base.Clone()
+	if tr.ResponseHeaderTimeout == 0 {
+		tr.ResponseHeaderTimeout = headerTimeout
+	}
+	sc.Transport = tr
+	return &sc
 }
 
 // canSign reports whether the client carries credentials for the
