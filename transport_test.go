@@ -313,3 +313,86 @@ func TestStreamStillHonorsContextCancellation(t *testing.T) {
 		t.Error("expected the read to fail once the context deadline passed")
 	}
 }
+
+// collectOpsHeaders records the X-Ops-* header names a handler received.
+func collectOpsHeaders(r *http.Request) []string {
+	var got []string
+	for k := range r.Header {
+		if strings.HasPrefix(k, "X-Ops-") {
+			got = append(got, k)
+		}
+	}
+	return got
+}
+
+// TestSignedHeadersAreStrippedOnCrossHostRedirect — Go strips Authorization,
+// Cookie, and WWW-Authenticate when a redirect crosses to another host, but it
+// knows nothing about Chef's X-Ops-* block, which is credential material of
+// the same kind. Forwarding it hands a username and a full RSA signature to a
+// host the caller never addressed.
+func TestSignedHeadersAreStrippedOnCrossHostRedirect(t *testing.T) {
+	var leaked []string
+	dest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = collectOpsHeaders(r)
+		_, _ = io.WriteString(w, `{"name":"apache2"}`)
+	}))
+	t.Cleanup(dest.Close)
+
+	src := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, dest.URL+"/api/v1/cookbooks/apache2", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(src.Close)
+
+	c := newTestClient(t, src, true)
+	if _, _, err := c.Cookbooks.Delete(context.Background(), "apache2"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if len(leaked) != 0 {
+		t.Errorf("signed headers leaked to a different host: %v", leaked)
+	}
+}
+
+// TestSignedHeadersSurviveSameHostRedirect — the guard must be scoped to a
+// host change. A Supermarket that redirects within its own origin still needs
+// the signature, or every signed write behind such a redirect would 401.
+func TestSignedHeadersSurviveSameHostRedirect(t *testing.T) {
+	var got []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/cookbooks/apache2", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/api/v1/cookbooks/apache2/", http.StatusTemporaryRedirect)
+	})
+	mux.HandleFunc("/api/v1/cookbooks/apache2/", func(w http.ResponseWriter, r *http.Request) {
+		got = collectOpsHeaders(r)
+		_, _ = io.WriteString(w, `{"name":"apache2"}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := newTestClient(t, srv, true)
+	if _, _, err := c.Cookbooks.Delete(context.Background(), "apache2"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if len(got) == 0 {
+		t.Error("signed headers were dropped on a same-host redirect")
+	}
+}
+
+// TestSignedClientStillLimitsRedirects — installing a CheckRedirect func
+// disables net/http's built-in 10-redirect cap, so the replacement has to
+// reimpose it or a redirect loop hangs the caller.
+func TestSignedClientStillLimitsRedirects(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Redirect(w, r, "/api/v1/cookbooks/loop", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := newTestClient(t, srv, true)
+	if _, _, err := c.Cookbooks.Delete(context.Background(), "loop"); err == nil {
+		t.Fatal("expected an error from an endless redirect loop")
+	}
+	if n := hits.Load(); n > 15 {
+		t.Errorf("followed %d redirects, want the request capped near 10", n)
+	}
+}

@@ -3,6 +3,7 @@ package supermarket
 import (
 	"crypto/rsa"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -24,6 +25,10 @@ type Client struct {
 	// serves the endpoints whose body is read incrementally. See
 	// newStreamClient.
 	streamClient *http.Client
+	// signedClient is httpClient with a redirect guard that drops the
+	// X-Ops-* credential headers when a redirect crosses to another host.
+	// See newSignedClient.
+	signedClient *http.Client
 	opts         options
 	clock        func() time.Time
 
@@ -74,6 +79,7 @@ func NewClient(cfg Config, opts ...Option) (*Client, error) {
 		key:          cfg.Key,
 		httpClient:   hc,
 		streamClient: newStreamClient(hc),
+		signedClient: newSignedClient(hc),
 		opts:         o,
 		clock:        time.Now,
 	}
@@ -160,6 +166,45 @@ func newStreamClient(hc *http.Client) *http.Client {
 		tr.ResponseHeaderTimeout = headerTimeout
 	}
 	sc.Transport = tr
+	return &sc
+}
+
+// maxRedirects mirrors net/http's built-in redirect cap. Installing a
+// CheckRedirect function disables that default, so newSignedClient has to
+// reimpose the limit itself.
+const maxRedirects = 10
+
+// newSignedClient derives the *http.Client used for signed (write) requests.
+//
+// net/http strips Authorization, Cookie, and WWW-Authenticate when a redirect
+// crosses to a different host, but it knows nothing about Chef's X-Ops-*
+// block — which is credential material of exactly the same kind. Forwarding it
+// hands a Supermarket username and a complete RSA signature to a host the
+// caller never addressed; against a plain-http base URL, a MITM redirect
+// harvests it outright.
+//
+// Dropping the headers costs nothing a correct server could have used: a
+// signature covers the method, path, body, and timestamp of one specific
+// request, so it is meaningless at the redirect target regardless.
+func newSignedClient(hc *http.Client) *http.Client {
+	sc := *hc
+	next := hc.CheckRedirect
+	sc.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) > 0 && req.URL.Host != via[0].URL.Host {
+			for k := range req.Header {
+				if strings.HasPrefix(k, "X-Ops-") {
+					req.Header.Del(k)
+				}
+			}
+		}
+		if next != nil {
+			return next(req, via)
+		}
+		if len(via) >= maxRedirects {
+			return errors.New("supermarket: stopped after 10 redirects")
+		}
+		return nil
+	}
 	return &sc
 }
 
