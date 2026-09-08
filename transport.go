@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cinc-project/cinc-supermarket-api/internal/signing"
 )
@@ -30,8 +33,10 @@ type request struct {
 	signBody []byte
 }
 
-// doRaw sends req and returns the raw response body. GETs are retried
-// on transient transport errors and 5xx responses.
+// doRaw sends req and returns the raw response body. GETs are retried on
+// transient transport errors, 5xx responses, and 429s, waiting between
+// attempts with jittered exponential backoff (or for whatever interval a
+// Retry-After header asks for).
 func (c *Client) doRaw(ctx context.Context, req request) ([]byte, *Response, error) {
 	if req.sign && !c.canSign() {
 		return nil, nil, ErrUnauthenticatedWrite
@@ -39,12 +44,100 @@ func (c *Client) doRaw(ctx context.Context, req request) ([]byte, *Response, err
 	var attempt int
 	for {
 		data, resp, err := c.doOnce(ctx, req)
-		retriable := (resp != nil && resp.StatusCode >= 500) || isNetErr(err)
-		if retriable && req.method == http.MethodGet && attempt < c.opts.maxRetries {
-			attempt++
-			continue
+		if retriable(resp, err) && req.method == http.MethodGet && attempt < c.opts.maxRetries {
+			// Wait before trying again. Retrying instantly turns a struggling
+			// server's 5xx into three times the load within a millisecond and
+			// gives a transient fault no time to clear.
+			if waitBeforeRetry(ctx, c.nextDelay(attempt, resp)) {
+				attempt++
+				continue
+			}
 		}
 		return data, resp, err
+	}
+}
+
+// retriable reports whether an attempt is worth repeating: a transport-level
+// failure, a server error, or an explicit rate-limit response.
+func retriable(resp *Response, err error) bool {
+	if resp != nil {
+		return resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests
+	}
+	return isNetErr(err)
+}
+
+// maxRetryDelay clamps any single wait between attempts, so that neither a
+// large MaxRetries nor a server-supplied Retry-After can park a request for
+// an unreasonable stretch.
+const maxRetryDelay = 30 * time.Second
+
+// backoffDelay is the un-jittered wait before retry number attempt (0-based):
+// base, 2*base, 4*base, ... clamped at maxRetryDelay.
+func backoffDelay(base time.Duration, attempt int) time.Duration {
+	if base <= 0 {
+		return 0
+	}
+	d := base
+	for range attempt {
+		d *= 2
+		if d >= maxRetryDelay {
+			return maxRetryDelay
+		}
+	}
+	return min(d, maxRetryDelay)
+}
+
+// retryAfterDelay reads a Retry-After header off resp. Supermarket may send
+// one with a 429 or a 503, and the server's own estimate beats a guess. Both
+// RFC 9110 forms are accepted: delay-seconds and an HTTP-date.
+func retryAfterDelay(resp *Response) (time.Duration, bool) {
+	if resp == nil || resp.HTTPResponse == nil {
+		return 0, false
+	}
+	v := resp.HTTPResponse.Header.Get("Retry-After")
+	if v == "" {
+		return 0, false
+	}
+	if secs, err := strconv.Atoi(v); err == nil {
+		if secs < 0 {
+			return 0, false
+		}
+		return time.Duration(secs) * time.Second, true
+	}
+	if when, err := http.ParseTime(v); err == nil {
+		return max(time.Until(when), 0), true
+	}
+	return 0, false
+}
+
+// nextDelay is how long to wait before retry number attempt (0-based).
+func (c *Client) nextDelay(attempt int, resp *Response) time.Duration {
+	if d, ok := retryAfterDelay(resp); ok {
+		return min(d, maxRetryDelay)
+	}
+	d := backoffDelay(c.opts.retryBackoff, attempt)
+	if d <= 0 {
+		return 0
+	}
+	// Jitter down to as little as half the computed delay so that a fleet of
+	// clients retrying the same outage doesn't resynchronize into a thundering
+	// herd on every beat.
+	return d/2 + time.Duration(rand.Int64N(int64(d/2)+1))
+}
+
+// waitBeforeRetry sleeps for d, or gives up early if ctx is done. It reports
+// whether the wait completed and another attempt should be made.
+func waitBeforeRetry(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
