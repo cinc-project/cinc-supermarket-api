@@ -42,6 +42,17 @@ func NewClient(cfg Config, opts ...Option) (*Client, error) {
 	if err != nil || base.Host == "" {
 		return nil, fmt.Errorf("supermarket: invalid BaseURL %q", raw)
 	}
+	// url.Parse is permissive; net/http is not. Reject what it can never
+	// fetch at construction rather than once per call.
+	if base.Scheme != "http" && base.Scheme != "https" {
+		return nil, fmt.Errorf("supermarket: BaseURL %q has scheme %q, want http or https", raw, base.Scheme)
+	}
+	// Request paths are appended by concatenation, so a query or fragment on
+	// the base would land in the middle of every URL: "http://x?a=1" plus
+	// "/api/v1/cookbooks" yields "http://x?a=1/api/v1/cookbooks".
+	if base.RawQuery != "" || base.Fragment != "" {
+		return nil, fmt.Errorf("supermarket: BaseURL %q must not carry a query or fragment", raw)
+	}
 	o := defaultOptions()
 	for _, opt := range opts {
 		opt(&o)

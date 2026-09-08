@@ -13,7 +13,7 @@ const DefaultBaseURL = "https://supermarket.chef.io"
 // Key are only needed for the write endpoints (share / delete); read
 // endpoints work with an empty Config.
 type Config struct {
-	BaseURL  string          // defaults to DefaultBaseURL
+	BaseURL  string          // http or https URL; defaults to DefaultBaseURL
 	Username string          // Supermarket username (write endpoints only)
 	Key      *rsa.PrivateKey // RSA private key registered on the user's profile (write endpoints only)
 }
