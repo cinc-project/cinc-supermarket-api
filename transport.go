@@ -107,7 +107,13 @@ func (c *Client) doOnce(ctx context.Context, r request) ([]byte, *Response, erro
 		}
 	}
 
-	httpResp, err := c.httpClient.Do(httpReq)
+	// Signed requests go through the client that drops the X-Ops-*
+	// credential headers if a redirect crosses to another host.
+	client := c.httpClient
+	if r.sign {
+		client = c.signedClient
+	}
+	httpResp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("supermarket: %s %s: %w", r.method, r.path, err)
 	}
