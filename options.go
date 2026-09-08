@@ -49,6 +49,10 @@ func WithHTTPClient(c *http.Client) Option {
 func WithUserAgent(ua string) Option { return func(o *options) { o.userAgent = ua } }
 
 // WithSkipTLSVerify disables TLS certificate verification (testing only).
+//
+// It requires the client's transport to be an *http.Transport, since that is
+// where the TLS config lives. Combining it with a custom RoundTripper is a
+// NewClient error rather than a silent downgrade to http.DefaultTransport.
 func WithSkipTLSVerify(skip bool) Option {
 	return func(o *options) { o.skipTLSVerify = skip }
 }

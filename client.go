@@ -48,7 +48,10 @@ func NewClient(cfg Config, opts ...Option) (*Client, error) {
 	}
 	hc := o.httpClient
 	if o.skipTLSVerify {
-		hc = withInsecureTLS(hc)
+		hc, err = withInsecureTLS(hc)
+		if err != nil {
+			return nil, err
+		}
 	}
 	c := &Client{
 		baseURL:    base,
@@ -72,10 +75,21 @@ func NewClient(cfg Config, opts ...Option) (*Client, error) {
 // transport settings (Timeout, CheckRedirect, Jar, connection-pool
 // tuning) rather than discarding a custom *http.Client. Only the TLS
 // verification flag is changed.
-func withInsecureTLS(hc *http.Client) *http.Client {
+//
+// InsecureSkipVerify lives on *http.Transport's TLS config, so a caller whose
+// client carries some other RoundTripper — an oauth2 wrapper, a tracing
+// round-tripper, a recorder — cannot be honoured. Rather than silently
+// substituting http.DefaultTransport and dropping that round-tripper on the
+// floor, the combination is refused.
+func withInsecureTLS(hc *http.Client) (*http.Client, error) {
 	base := http.DefaultTransport.(*http.Transport)
-	if t, ok := hc.Transport.(*http.Transport); ok {
+	switch t := hc.Transport.(type) {
+	case nil:
+	case *http.Transport:
 		base = t
+	default:
+		return nil, fmt.Errorf("supermarket: WithSkipTLSVerify cannot modify a %T transport; "+
+			"set InsecureSkipVerify on your own *http.Transport and pass it via WithHTTPClient instead", t)
 	}
 	tr := base.Clone()
 	if tr.TLSClientConfig == nil {
@@ -87,7 +101,7 @@ func withInsecureTLS(hc *http.Client) *http.Client {
 		Timeout:       hc.Timeout,
 		CheckRedirect: hc.CheckRedirect,
 		Jar:           hc.Jar,
-	}
+	}, nil
 }
 
 // canSign reports whether the client carries credentials for the
