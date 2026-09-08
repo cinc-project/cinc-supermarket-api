@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -105,5 +107,58 @@ func TestWithSkipTLSVerifyEnablesInsecureTransport(t *testing.T) {
 	}
 	if tr.TLSClientConfig == nil || !tr.TLSClientConfig.InsecureSkipVerify {
 		t.Errorf("InsecureSkipVerify = false, want true")
+	}
+}
+
+// markerRoundTripper records whether it was ever asked to carry a request.
+type markerRoundTripper struct{ used atomic.Bool }
+
+func (m *markerRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	m.used.Store(true)
+	return http.DefaultTransport.RoundTrip(r)
+}
+
+// TestWithSkipTLSVerifyRejectsCustomRoundTripper — InsecureSkipVerify lives on
+// *http.Transport's TLS config, so there is no way to flip it on an arbitrary
+// RoundTripper. The old code fell back to http.DefaultTransport, silently
+// discarding the caller's transport: an oauth2 wrapper, an OpenTelemetry
+// round-tripper, or a VCR recorder would simply stop being used, with no error
+// anywhere. Refusing the combination is the honest answer.
+func TestWithSkipTLSVerifyRejectsCustomRoundTripper(t *testing.T) {
+	rt := &markerRoundTripper{}
+	_, err := NewClient(Config{BaseURL: "https://x.test"},
+		WithHTTPClient(&http.Client{Transport: rt}),
+		WithSkipTLSVerify(true))
+	if err == nil {
+		t.Fatal("NewClient accepted WithSkipTLSVerify alongside a custom RoundTripper; " +
+			"the transport would be silently discarded")
+	}
+	if !strings.Contains(err.Error(), "WithSkipTLSVerify") {
+		t.Errorf("error = %q, want it to name the offending option", err)
+	}
+}
+
+// TestCustomRoundTripperIsUsedWithoutSkipTLSVerify — the rejection above must
+// be scoped to the conflicting combination. On its own a custom RoundTripper
+// has to keep carrying every request.
+func TestCustomRoundTripperIsUsedWithoutSkipTLSVerify(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"status":"ok"}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	rt := &markerRoundTripper{}
+	c, err := NewClient(Config{BaseURL: srv.URL},
+		WithHTTPClient(&http.Client{Transport: rt}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Health.Status(context.Background()); err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if !rt.used.Load() {
+		t.Error("the custom RoundTripper never carried the request")
 	}
 }
