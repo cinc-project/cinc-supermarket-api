@@ -61,10 +61,7 @@ func isNetErr(err error) bool {
 		return false
 	}
 	var er *ErrorResponse
-	if errors.As(err, &er) {
-		return false
-	}
-	return true
+	return !errors.As(err, &er)
 }
 
 func (c *Client) doOnce(ctx context.Context, r request) ([]byte, *Response, error) {
