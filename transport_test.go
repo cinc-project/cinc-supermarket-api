@@ -104,7 +104,7 @@ func TestTransportRetriesGETOnTransportError(t *testing.T) {
 	addr := srv.URL
 	srv.Close() // nothing is listening now → dial fails
 
-	c, err := NewClient(Config{BaseURL: addr}, WithMaxRetries(2))
+	c, err := NewClient(Config{BaseURL: addr}, WithMaxRetries(2), WithRetryBackoff(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,5 +394,142 @@ func TestSignedClientStillLimitsRedirects(t *testing.T) {
 	}
 	if n := hits.Load(); n > 15 {
 		t.Errorf("followed %d redirects, want the request capped near 10", n)
+	}
+}
+
+// TestTransportBacksOffBetweenRetries — the retry loop used a bare `continue`,
+// so three attempts against a struggling server went out in well under a
+// millisecond. That is not a retry, it is an amplifier: the server sheds load
+// and immediately gets 3x the traffic, and a transient blip has had no time to
+// clear.
+func TestTransportBacksOffBetweenRetries(t *testing.T) {
+	const base = 80 * time.Millisecond
+	var hits atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c, err := NewClient(Config{BaseURL: srv.URL}, WithMaxRetries(2), WithRetryBackoff(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if _, _, err := c.Health.Status(context.Background()); err == nil {
+		t.Fatal("expected an error after exhausting retries")
+	}
+	elapsed := time.Since(start)
+
+	if got := hits.Load(); got != 3 {
+		t.Fatalf("server hits = %d, want 3", got)
+	}
+	// Delays grow 80ms then 160ms, each jittered down to at worst half, so
+	// the floor is 120ms. Assert comfortably under that but well above the
+	// sub-millisecond hot loop this replaces.
+	if elapsed < 100*time.Millisecond {
+		t.Errorf("3 attempts took %v; retries are not backing off", elapsed)
+	}
+}
+
+// TestTransportRetriesOn429 — a rate-limited response is transient by
+// definition, and is exactly the case where hammering hurts most.
+func TestTransportRetriesOn429(t *testing.T) {
+	var hits atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, _ *http.Request) {
+		if hits.Add(1) == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = io.WriteString(w, `{"status":"ok"}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := newTestClient(t, srv, false)
+
+	if _, _, err := c.Health.Status(context.Background()); err != nil {
+		t.Fatalf("Status after a 429: %v", err)
+	}
+	if got := hits.Load(); got != 2 {
+		t.Errorf("server hits = %d, want 2 (429 then success)", got)
+	}
+}
+
+// TestTransportBackoffAbortsOnContextCancel — waiting between attempts must
+// not outlive the caller's context, or a cancelled request keeps a goroutine
+// parked for the full backoff.
+func TestTransportBackoffAbortsOnContextCancel(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c, err := NewClient(Config{BaseURL: srv.URL},
+		WithMaxRetries(5), WithRetryBackoff(10*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	if _, _, err := c.Health.Status(ctx); err == nil {
+		t.Fatal("expected an error")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("returned after %v; the backoff wait ignored the cancelled context", elapsed)
+	}
+}
+
+// TestRetryAfterDelay covers the header parsing on its own so the retry
+// timing tests don't have to sleep for real seconds.
+func TestRetryAfterDelay(t *testing.T) {
+	mk := func(v string) *Response {
+		h := http.Header{}
+		if v != "" {
+			h.Set("Retry-After", v)
+		}
+		return &Response{HTTPResponse: &http.Response{Header: h}}
+	}
+	tests := []struct {
+		name  string
+		resp  *Response
+		want  time.Duration
+		wasOK bool
+	}{
+		{"absent", mk(""), 0, false},
+		{"seconds", mk("2"), 2 * time.Second, true},
+		{"zero", mk("0"), 0, true},
+		{"negative", mk("-5"), 0, false},
+		{"garbage", mk("soon"), 0, false},
+		{"nil response", nil, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := retryAfterDelay(tt.resp)
+			if ok != tt.wasOK || got != tt.want {
+				t.Errorf("retryAfterDelay() = (%v, %v), want (%v, %v)", got, ok, tt.want, tt.wasOK)
+			}
+		})
+	}
+}
+
+// TestBackoffDelayGrowsAndCaps — exponential growth, clamped so a long
+// MaxRetries can't schedule an absurd wait.
+func TestBackoffDelayGrowsAndCaps(t *testing.T) {
+	base := 100 * time.Millisecond
+	if got := backoffDelay(base, 0); got != base {
+		t.Errorf("attempt 0 = %v, want %v", got, base)
+	}
+	if got := backoffDelay(base, 2); got != 400*time.Millisecond {
+		t.Errorf("attempt 2 = %v, want 400ms", got)
+	}
+	if got := backoffDelay(base, 40); got != maxRetryDelay {
+		t.Errorf("attempt 40 = %v, want it clamped to %v", got, maxRetryDelay)
 	}
 }

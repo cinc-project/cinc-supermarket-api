@@ -20,14 +20,17 @@ func testRSAKey(t *testing.T) *rsa.PrivateKey {
 
 // newTestClient builds a Client pointed at srv. When signed is true the
 // client carries credentials and can hit write endpoints.
-func newTestClient(t *testing.T, srv *httptest.Server, signed bool) *Client {
+//
+// Retry backoff defaults to zero here so the suite stays fast; pass an
+// explicit WithRetryBackoff in opts to exercise the waiting itself.
+func newTestClient(t *testing.T, srv *httptest.Server, signed bool, opts ...Option) *Client {
 	t.Helper()
 	cfg := Config{BaseURL: srv.URL}
 	if signed {
 		cfg.Username = "tester"
 		cfg.Key = testRSAKey(t)
 	}
-	c, err := NewClient(cfg)
+	c, err := NewClient(cfg, append([]Option{WithRetryBackoff(0)}, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
