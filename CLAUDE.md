@@ -22,7 +22,10 @@ renamed twice; don't reintroduce `tas50/…` or `cinc-supermarket` paths.
   key generation and the Ruby-backed signing tests, not I/O. Run the
   whole thing on every change; don't reach for a narrower scope.
 - Single test: `go test -run TestName ./...`.
-- Run `gofmt -w .` and `go vet ./...` before committing; CI gates on both.
+- Run `golangci-lint run ./...` before committing; CI gates on it. It covers
+  gofmt and `go vet` (plus errcheck/staticcheck), so those are not run separately.
+  Config is `.golangci.yml`; it sets `build-tags: [contract]` so the tagged
+  file is linted too.
 - Coverage: `go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out`.
   It sits around 94%.
 
