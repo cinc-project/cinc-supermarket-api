@@ -35,9 +35,13 @@ func TestCompareVersions(t *testing.T) {
 		{"1.0.0+build5", "1.0.0+build2", 0},
 		{"1.0.0-beta+x", "1.0.0-beta+y", 0},
 
-		// A non-numeric base segment is treated as zero rather than panicking.
-		{"1.0.x", "1.0.0", 0},
+		// A non-numeric base segment must not collapse to zero: "1.0.x" and
+		// "1.0.0" are different versions and have to compare that way, or
+		// sorting and dedup silently conflate them. Following semver §11, a
+		// numeric identifier ranks below an alphanumeric one.
+		{"1.0.x", "1.0.0", 1},
 		{"2.0.0", "1.0.x", 1},
+		{"1.0.x", "1.0.y", -1},
 	}
 	for _, c := range cases {
 		if got := CompareVersions(c.a, c.b); got != c.want {
@@ -46,6 +50,18 @@ func TestCompareVersions(t *testing.T) {
 		if got := CompareVersions(c.b, c.a); got != -c.want {
 			t.Errorf("CompareVersions(%q, %q) = %d, want %d (antisymmetry)", c.b, c.a, got, -c.want)
 		}
+	}
+}
+
+// TestCompareVersionsDistinguishesMalformedSegments — the equality above is
+// the property that matters: a comparator that reports "equal" for strings
+// that differ makes LatestVersion and any sort built on it unpredictable.
+func TestCompareVersionsDistinguishesMalformedSegments(t *testing.T) {
+	if CompareVersions("1.0.x", "1.0.0") == 0 {
+		t.Error(`CompareVersions("1.0.x", "1.0.0") = 0; distinct versions must not compare equal`)
+	}
+	if got := LatestVersion([]string{"1.0.0", "1.0.x"}); got == "" {
+		t.Error("LatestVersion returned empty for a list containing a malformed version")
 	}
 }
 
@@ -77,6 +93,14 @@ func TestVersionFromURL(t *testing.T) {
 		"12.0.4": "12.0.4", // bare version passes through
 		"12_0_4": "12.0.4", // underscore form normalized
 		"":       "",
+
+		// Input that is not a version must not be mangled into one. The
+		// blanket underscore->dot rewrite turned any identifier into a
+		// plausible-looking version string.
+		"my_cookbook": "",
+		"https://supermarket.chef.io/api/v1/cookbooks/my_cb": "",
+		"https://supermarket.chef.io/api/v1/cookbooks":       "",
+		"not a version": "",
 	}
 	for in, want := range cases {
 		if got := VersionFromURL(in); got != want {
