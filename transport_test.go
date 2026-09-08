@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -394,5 +395,50 @@ func TestSignedClientStillLimitsRedirects(t *testing.T) {
 	}
 	if n := hits.Load(); n > 15 {
 		t.Errorf("followed %d redirects, want the request capped near 10", n)
+	}
+}
+
+// TestEmptyResponseBodyIsAnError — doJSON returned (zero, nil) for a 2xx with
+// no body, and every service method wraps that as `return &cb, resp, nil`. The
+// caller therefore received a valid-looking non-nil *Cookbook with every field
+// zeroed and no error, unable to tell "empty response" from "cookbook with
+// nothing set". A JSON API answering 2xx with no document is a protocol
+// violation, not a result.
+func TestEmptyResponseBodyIsAnError(t *testing.T) {
+	for _, body := range []string{"", "   ", "\n\t\n"} {
+		t.Run(strconv.Quote(body), func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/cookbooks/apache2", func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, body)
+			})
+			srv := httptest.NewServer(mux)
+			t.Cleanup(srv.Close)
+			c := newTestClient(t, srv, false)
+
+			cb, _, err := c.Cookbooks.Get(context.Background(), "apache2")
+			if err == nil {
+				t.Fatalf("Get on an empty 200 returned nil error and %+v", cb)
+			}
+			if !strings.Contains(err.Error(), "empty response body") {
+				t.Errorf("error = %q, want it to name the empty body", err)
+			}
+		})
+	}
+}
+
+// TestNonEmptyResponseBodyStillDecodes guards the other direction: the check
+// must not reject a legitimately small document.
+func TestNonEmptyResponseBodyStillDecodes(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/cookbooks/apache2", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := newTestClient(t, srv, false)
+
+	if _, _, err := c.Cookbooks.Get(context.Background(), "apache2"); err != nil {
+		t.Errorf("an empty JSON object is a valid document, got error: %v", err)
 	}
 }

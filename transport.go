@@ -133,8 +133,17 @@ func doJSON[T any](ctx context.Context, c *Client, r request) (T, *Response, err
 	if err != nil {
 		return zero, resp, err
 	}
-	if len(data) == 0 {
-		return zero, resp, nil
+	// A 2xx carrying no document is a protocol violation, not a result.
+	// Returning (zero, nil) here handed callers a valid-looking zero value —
+	// a *Cookbook with every field empty and no error — with no way to tell
+	// that apart from a record whose fields really are empty.
+	if len(bytes.TrimSpace(data)) == 0 {
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		return zero, resp, fmt.Errorf("supermarket: %s %s: empty response body (HTTP %d)",
+			r.method, r.path, status)
 	}
 	var out T
 	if err := json.Unmarshal(data, &out); err != nil {
