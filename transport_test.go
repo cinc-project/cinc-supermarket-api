@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -394,5 +395,59 @@ func TestSignedClientStillLimitsRedirects(t *testing.T) {
 	}
 	if n := hits.Load(); n > 15 {
 		t.Errorf("followed %d redirects, want the request capped near 10", n)
+	}
+}
+
+// headerCapture records the outgoing request's header map, which is what
+// doOnce actually builds — a Go *server* canonicalizes every incoming key, so
+// only the client side can show whether the keys were canonicalized here.
+type headerCapture struct{ hdr http.Header }
+
+func (h *headerCapture) RoundTrip(r *http.Request) (*http.Response, error) {
+	h.hdr = r.Header.Clone()
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{"name":"apache2"}`)),
+		Header:     http.Header{},
+		Request:    r,
+	}, nil
+}
+
+// TestSignedHeaderKeysAreCanonicalized — doOnce assigned the signing headers
+// straight into the request's header map:
+//
+//	for k, v := range hdrs {
+//		httpReq.Header[k] = v
+//	}
+//
+// A raw map write bypasses net/http's key canonicalization, so whatever casing
+// signing.SignHeaders happens to produce is what lands in the map. Any code
+// that later looks one of those headers up by its canonical name — middleware,
+// an instrumented RoundTripper, http.Header.Get — silently fails to find it.
+// Copying through the Header API makes the request independent of how the
+// signer builds its map.
+func TestSignedHeaderKeysAreCanonicalized(t *testing.T) {
+	cap := &headerCapture{}
+	c, err := NewClient(
+		Config{BaseURL: "https://supermarket.test", Username: "tester", Key: testRSAKey(t)},
+		WithHTTPClient(&http.Client{Transport: cap}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Cookbooks.Delete(context.Background(), "apache2"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	for k := range cap.hdr {
+		if !strings.HasPrefix(k, "X-Ops-") {
+			continue
+		}
+		if canonical := textproto.CanonicalMIMEHeaderKey(k); k != canonical {
+			t.Errorf("header key %q is not canonical (want %q); a raw map write let it through", k, canonical)
+		}
+	}
+	// Guard against the loop above passing vacuously.
+	if cap.hdr.Get("X-Ops-Sign") == "" {
+		t.Fatal("no signed headers were captured")
 	}
 }
