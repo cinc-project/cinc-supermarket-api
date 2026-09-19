@@ -37,5 +37,5 @@ func (s *UniverseService) Get(ctx context.Context) (Universe, *Response, error) 
 // timeout — a multi-megabyte universe would otherwise be truncated
 // mid-read. Bound the download with ctx.
 func (s *UniverseService) GetStream(ctx context.Context) (io.ReadCloser, *Response, error) {
-	return s.client.stream(ctx, "/universe")
+	return s.client.stream(ctx, "/universe", "application/json")
 }
