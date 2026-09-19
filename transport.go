@@ -99,8 +99,15 @@ func (c *Client) doOnce(ctx context.Context, r request) ([]byte, *Response, erro
 		if err != nil {
 			return nil, nil, err
 		}
-		for k, v := range hdrs {
-			httpReq.Header[k] = v
+		// Copy through the Header API rather than assigning into the map
+		// directly: Add canonicalizes each key, so the outgoing request is
+		// correct regardless of how signing.SignHeaders builds its map. A raw
+		// map write would preserve whatever casing the signer used, and any
+		// canonical lookup downstream would then miss the header.
+		for k, values := range hdrs {
+			for _, v := range values {
+				httpReq.Header.Add(k, v)
+			}
 		}
 	}
 
