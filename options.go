@@ -2,6 +2,7 @@ package supermarket
 
 import (
 	"crypto/rsa"
+	"crypto/x509"
 	"net/http"
 	"time"
 )
@@ -22,6 +23,7 @@ type options struct {
 	httpClient    *http.Client
 	userAgent     string
 	skipTLSVerify bool
+	rootCAs       *x509.CertPool
 	maxRetries    int
 	retryBackoff  time.Duration
 }
@@ -50,7 +52,10 @@ func WithHTTPClient(c *http.Client) Option {
 // WithUserAgent sets the User-Agent header.
 func WithUserAgent(ua string) Option { return func(o *options) { o.userAgent = ua } }
 
-// WithSkipTLSVerify disables TLS certificate verification (testing only).
+// WithSkipTLSVerify disables TLS certificate verification, leaving the
+// connection open to interception. It is off by default and meant for local
+// testing only; to reach a Supermarket whose certificate comes from a private
+// CA, use WithRootCAs, which keeps verification on.
 //
 // It requires the client's transport to be an *http.Transport, since that is
 // where the TLS config lives. Combining it with a custom RoundTripper is a
@@ -75,6 +80,22 @@ func WithMaxRetries(n int) Option {
 	return func(o *options) {
 		if n >= 0 {
 			o.maxRetries = n
+		}
+	}
+}
+
+// WithRootCAs sets the certificate authorities the client trusts when
+// verifying the server, replacing the system pool. Use it to reach a
+// Supermarket whose certificate is issued by a private or internal CA without
+// disabling verification. A nil pool is ignored.
+//
+// Like WithSkipTLSVerify it requires the client's transport to be an
+// *http.Transport; combining it with a custom RoundTripper is a NewClient
+// error.
+func WithRootCAs(pool *x509.CertPool) Option {
+	return func(o *options) {
+		if pool != nil {
+			o.rootCAs = pool
 		}
 	}
 }
