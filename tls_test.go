@@ -34,8 +34,7 @@ func TestPrivateCAIsRejectedByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _, err = c.Health.Status(context.Background())
-	var unknown x509.UnknownAuthorityError
-	if !errors.As(err, &unknown) {
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); !ok {
 		t.Fatalf("Status against an untrusted CA: err = %v, want x509.UnknownAuthorityError", err)
 	}
 }

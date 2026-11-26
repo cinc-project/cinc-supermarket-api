@@ -16,7 +16,7 @@ renamed twice; don't reintroduce `tas50/…` or `cinc-supermarket` paths.
 ## Build & test
 
 - There is no Makefile. Build with `go build ./...` and test with
-  `go test ./...`. Go 1.26.
+  `go test ./...`. Go 1.27.
 - The default suite makes no network calls — every test stands up an
   `httptest.Server` — and takes roughly 2–3 seconds. Most of that is RSA
   key generation and the Ruby-backed signing tests, not I/O. Run the
