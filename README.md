@@ -108,4 +108,6 @@ stays fast:
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
+Copyright 2026 The Cinc Project and Tim Smith.
+
+Licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE).
