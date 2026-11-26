@@ -157,9 +157,11 @@ func TestCookbooksGetVersionExposesSupportsAndQualityMetrics(t *testing.T) {
 }
 
 func TestCookbooksGetMapsNotFoundFromErrorCode(t *testing.T) {
-	// Supermarket returns 400 with error_code=NOT_FOUND for missing
-	// resources; the library should normalize that to ErrNotFound so
-	// callers can use errors.Is without thinking about HTTP codes.
+	// Supermarket marks a missing resource with error_code=NOT_FOUND
+	// (production pairs it with 404). The handler uses 400 so the test
+	// proves the mapping to ErrNotFound comes from error_code, not the
+	// status, and callers can use errors.Is without thinking about HTTP
+	// codes.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/cookbooks/missing", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)

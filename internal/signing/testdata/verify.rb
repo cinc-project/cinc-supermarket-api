@@ -21,8 +21,8 @@
 #     -> {"headers":{"X-Ops-...":"..."}}
 #
 # The "sign" op exists so the Go test can mint a *valid* version=1.3 request
-# (which our Go signer deliberately cannot produce) and prove the verifier,
-# gated to the Supermarket-supported versions, rejects it.
+# (which our Go signer deliberately cannot produce) and exercise the
+# allowed_versions gate below with it.
 #
 # Requires the mixlib-authentication gem (gem install mixlib-authentication).
 
@@ -75,11 +75,11 @@ def op_verify(req)
   version = parse_version(headers)
   allowed = req.fetch("allowed_versions")
 
-  # Gate on the Supermarket-supported version set BEFORE handing the request
-  # to the verifier. This mirrors how the real Supermarket refuses an
-  # unsupported sign version outright (mixlib's own crypto would happily
-  # verify a well-formed 1.3 signature, so the gate is what actually rejects
-  # the v1.3-class regression).
+  # Gate on allowed_versions BEFORE handing the request to the verifier.
+  # This gate is ours, not mixlib's or Supermarket's: it emulates the observed
+  # production behaviour (1.3 shares got a 401 from supermarket.chef.io, cause
+  # unknown). mixlib's verifier would happily verify a well-formed 1.3
+  # signature, so this gate is the only thing that rejects one here.
   unless allowed.include?(version)
     return { "authenticated" => false, "version" => version,
              "version_allowed" => false,

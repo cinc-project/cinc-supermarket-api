@@ -2,8 +2,7 @@
 // protocol used by Supermarket's write endpoints.
 //
 // We sign with version 1.1 (SHA-1) rather than the modern version 1.3
-// (SHA-256). See SignVersion in signer.go for the full rationale and the
-// path back to 1.3.
+// (SHA-256). See SignVersion in signer.go for why.
 package signing
 
 import (

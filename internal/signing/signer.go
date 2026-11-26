@@ -12,10 +12,11 @@ import (
 
 // SignVersion is the mixlib-authentication signing protocol version we use.
 //
-// We sign with mixlib-authentication version 1.1 (SHA-1) because the public
-// Chef Supermarket's verifier only supports sign versions 1.0/1.1. Move this
-// back to version 1.3 (SHA-256) — the modern scheme this library originally
-// used — once we run a modernized Supermarket that accepts 1.3.
+// We sign with mixlib-authentication version 1.1 (SHA-1) because signing with
+// 1.3 (SHA-256), the scheme this library originally used, got a 401 on every
+// share against supermarket.chef.io in production. The cause is unknown:
+// upstream mixlib-authentication's verifier does handle 1.3. Only move back to
+// 1.3 after a 1.3 share has been shown to succeed against the target server.
 const SignVersion = "1.1"
 
 // signHeaderValue is the literal X-Ops-Sign header value. It mirrors

@@ -16,8 +16,8 @@ import (
 // This file is the gem-backed half of the signing guard: it runs our real
 // SignHeaders output through mixlib-authentication's SERVER-side verifier
 // (testdata/verify.rb) and asserts the request authenticates — the check the
-// byte-for-byte signer vectors can't make, because they never involve the
-// verifier that actually rejected the v1.3 regression in production.
+// byte-for-byte signer vectors can't make, because they never involve a
+// server-side verifier.
 //
 // It is the gold standard but is GATED on Ruby + the mixlib-authentication
 // gem being installed; when they're absent it t.Skips with a clear message
@@ -91,7 +91,8 @@ func testPublicKeyPEM(t *testing.T) string {
 // clock, is what we're checking here.
 const hugeSkew = 100 * 365 * 24 * 60 * 60 // ~100 years, in seconds
 
-// supportedVersions mirrors the Supermarket-accepted set the verifier gates on.
+// supportedVersions is the allowed_versions set passed to verify.rb's gate:
+// the sign versions observed to work against the public Supermarket.
 var supportedVersions = []any{"1.0", "1.1"}
 
 // TestVerifier_SignHeadersAuthenticates is the positive gold-standard case:
@@ -133,13 +134,14 @@ func TestVerifier_SignHeadersAuthenticates(t *testing.T) {
 	}
 }
 
-// TestVerifier_RejectsVersion13 is the negative case proving the guard: a
-// genuine, cryptographically valid version=1.3 request — the exact thing the
-// shipped bug produced — is rejected by the verifier gated to the
-// Supermarket-supported versions. To prove the rejection is the version gate
-// and not a malformed signature, the same request authenticates once 1.3 is
-// added to the allowed set.
-func TestVerifier_RejectsVersion13(t *testing.T) {
+// TestVerifier_GateRejectsVersion13 checks verify.rb's allowed_versions gate:
+// a cryptographically valid version=1.3 request is rejected when the gate
+// allows only 1.0/1.1, and the same request authenticates through mixlib once
+// 1.3 is allowed. It proves the gate works and that mixlib verifies 1.3. It
+// does NOT prove the public Supermarket rejects 1.3; that is observed
+// production behaviour (401 on every 1.3 share, cause unknown) that the gate
+// only emulates.
+func TestVerifier_GateRejectsVersion13(t *testing.T) {
 	requireMixlib(t)
 
 	// Mint a real 1.3 (SHA-256) request via mixlib's own signer — our Go
@@ -173,7 +175,7 @@ func TestVerifier_RejectsVersion13(t *testing.T) {
 		"headers":        hdrs,
 	}
 
-	// Gated to the Supermarket-supported set: REJECTED.
+	// Gated to 1.0/1.1: rejected by verify.rb's gate.
 	rejected := runVerifyRB(t, withAllowed(base, supportedVersions))
 	if rejected["authenticated"] != false {
 		t.Fatalf("v1.3 request should be rejected under versions %v, got %+v", supportedVersions, rejected)
@@ -182,8 +184,8 @@ func TestVerifier_RejectsVersion13(t *testing.T) {
 		t.Fatalf("expected the version gate to flag 1.3 as disallowed, got %+v", rejected)
 	}
 
-	// With 1.3 explicitly allowed the very same request authenticates,
-	// proving the rejection above was the version gate, not a bad signature.
+	// With 1.3 allowed the same request authenticates through mixlib,
+	// proving the rejection above was the gate, not a bad signature.
 	allowed := runVerifyRB(t, withAllowed(base, []any{"1.0", "1.1", "1.3"}))
 	if allowed["authenticated"] != true {
 		t.Fatalf("v1.3 request should authenticate once 1.3 is allowed (proves the signature is valid): %+v", allowed)
