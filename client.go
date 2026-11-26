@@ -3,6 +3,7 @@ package supermarket
 import (
 	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/http"
@@ -67,8 +68,8 @@ func NewClient(cfg Config, opts ...Option) (*Client, error) {
 		opt(&o)
 	}
 	hc := o.httpClient
-	if o.skipTLSVerify {
-		hc, err = withInsecureTLS(hc)
+	if o.skipTLSVerify || o.rootCAs != nil {
+		hc, err = withTLSOverrides(hc, o.rootCAs, o.skipTLSVerify)
 		if err != nil {
 			return nil, err
 		}
@@ -92,32 +93,44 @@ func NewClient(cfg Config, opts ...Option) (*Client, error) {
 	return c, nil
 }
 
-// withInsecureTLS returns a copy of hc whose transport skips TLS
-// certificate verification, preserving the caller's other client and
-// transport settings (Timeout, CheckRedirect, Jar, connection-pool
-// tuning) rather than discarding a custom *http.Client. Only the TLS
-// verification flag is changed.
+// withTLSOverrides returns a copy of hc whose transport trusts rootCAs (when
+// non-nil) and, when skipVerify is set, skips certificate verification. The
+// caller's other client and transport settings (Timeout, CheckRedirect, Jar,
+// connection-pool tuning) are preserved rather than discarding a custom
+// *http.Client; only the TLS config is changed.
 //
-// InsecureSkipVerify lives on *http.Transport's TLS config, so a caller whose
-// client carries some other RoundTripper — an oauth2 wrapper, a tracing
+// Both settings live on *http.Transport's TLS config, so a caller whose client
+// carries some other RoundTripper — an oauth2 wrapper, a tracing
 // round-tripper, a recorder — cannot be honoured. Rather than silently
 // substituting http.DefaultTransport and dropping that round-tripper on the
-// floor, the combination is refused.
-func withInsecureTLS(hc *http.Client) (*http.Client, error) {
+// floor, or ignoring the setting and leaving the caller believing it applies,
+// the combination is refused.
+func withTLSOverrides(hc *http.Client, rootCAs *x509.CertPool, skipVerify bool) (*http.Client, error) {
 	base := http.DefaultTransport.(*http.Transport)
 	switch t := hc.Transport.(type) {
 	case nil:
 	case *http.Transport:
 		base = t
 	default:
-		return nil, fmt.Errorf("supermarket: WithSkipTLSVerify cannot modify a %T transport; "+
-			"set InsecureSkipVerify on your own *http.Transport and pass it via WithHTTPClient instead", t)
+		opt := "WithRootCAs"
+		if skipVerify {
+			opt = "WithSkipTLSVerify"
+		}
+		return nil, fmt.Errorf("supermarket: %s cannot modify a %T transport; "+
+			"configure TLS on your own *http.Transport and pass it via WithHTTPClient instead", opt, t)
 	}
 	tr := base.Clone()
 	if tr.TLSClientConfig == nil {
 		tr.TLSClientConfig = &tls.Config{}
 	}
-	tr.TLSClientConfig.InsecureSkipVerify = true
+	if rootCAs != nil {
+		tr.TLSClientConfig.RootCAs = rootCAs
+	}
+	if skipVerify {
+		// Opt-in only, via WithSkipTLSVerify; off by default. WithRootCAs is the
+		// verified alternative for a private CA. nogrep: go-disabled-cert-validation
+		tr.TLSClientConfig.InsecureSkipVerify = true
+	}
 	return &http.Client{
 		Transport:     tr,
 		Timeout:       hc.Timeout,

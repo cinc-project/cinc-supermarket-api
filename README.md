@@ -28,6 +28,19 @@ private key registered on that user's Supermarket profile:
 A `Client` with no credentials refuses write calls with
 `ErrUnauthenticatedWrite` without contacting the server.
 
+A private Supermarket whose certificate comes from an internal CA is reached
+by trusting that CA, which keeps certificate verification on:
+
+    pem, _ := os.ReadFile("/etc/ssl/internal-ca.pem")
+    pool := x509.NewCertPool()
+    pool.AppendCertsFromPEM(pem)
+    c, _ := supermarket.NewClient(
+        supermarket.Config{BaseURL: "https://supermarket.example.internal"},
+        supermarket.WithRootCAs(pool))
+
+`WithSkipTLSVerify(true)` turns verification off entirely. It is off by
+default and meant for local testing only.
+
 Version helpers work on the version strings cookbooks return, without a
 full semver dependency: `CompareVersions(a, b)` orders two versions,
 `LatestVersion(versions)` picks the newest, and `VersionFromURL(u)`
