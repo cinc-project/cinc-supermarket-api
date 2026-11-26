@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"maps"
 	"os"
 	"os/exec"
 	"strconv"
@@ -191,9 +192,7 @@ func TestVerifier_RejectsVersion13(t *testing.T) {
 
 func withAllowed(base map[string]any, allowed []any) map[string]any {
 	out := make(map[string]any, len(base)+1)
-	for k, v := range base {
-		out[k] = v
-	}
+	maps.Copy(out, base)
 	out["allowed_versions"] = allowed
 	return out
 }
