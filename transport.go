@@ -60,7 +60,7 @@ func (c *Client) doRaw(ctx context.Context, req request) ([]byte, *Response, err
 // retriable reports whether an attempt is worth repeating: a transport-level
 // failure, a server error, or an explicit rate-limit response.
 func retriable(resp *Response, err error) bool {
-	if resp != nil {
+	if resp != nil && resp.Response != nil {
 		return resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests
 	}
 	return isNetErr(err)
@@ -91,10 +91,10 @@ func backoffDelay(base time.Duration, attempt int) time.Duration {
 // one with a 429 or a 503, and the server's own estimate beats a guess. Both
 // RFC 9110 forms are accepted: delay-seconds and an HTTP-date.
 func retryAfterDelay(resp *Response) (time.Duration, bool) {
-	if resp == nil || resp.HTTPResponse == nil {
+	if resp == nil || resp.Response == nil {
 		return 0, false
 	}
-	v := resp.HTTPResponse.Header.Get("Retry-After")
+	v := resp.Header.Get("Retry-After")
 	if v == "" {
 		return 0, false
 	}
@@ -219,7 +219,7 @@ func (c *Client) doOnce(ctx context.Context, r request) ([]byte, *Response, erro
 	if err != nil {
 		return nil, nil, fmt.Errorf("supermarket: read body: %w", err)
 	}
-	resp := &Response{HTTPResponse: httpResp, StatusCode: httpResp.StatusCode}
+	resp := &Response{Response: httpResp}
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		return data, resp, newErrorResponse(r.method, r.path, httpResp.StatusCode, data)
 	}
@@ -239,7 +239,7 @@ func doJSON[T any](ctx context.Context, c *Client, r request) (T, *Response, err
 	// that apart from a record whose fields really are empty.
 	if len(bytes.TrimSpace(data)) == 0 {
 		status := 0
-		if resp != nil {
+		if resp != nil && resp.Response != nil {
 			status = resp.StatusCode
 		}
 		return zero, resp, fmt.Errorf("supermarket: %s %s: empty response body (HTTP %d)",
@@ -279,7 +279,7 @@ func (c *Client) stream(ctx context.Context, path, accept string) (io.ReadCloser
 	if err != nil {
 		return nil, nil, fmt.Errorf("supermarket: GET %s: %w", path, err)
 	}
-	resp := &Response{HTTPResponse: httpResp, StatusCode: httpResp.StatusCode}
+	resp := &Response{Response: httpResp}
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		data, _ := io.ReadAll(httpResp.Body)
 		httpResp.Body.Close()
