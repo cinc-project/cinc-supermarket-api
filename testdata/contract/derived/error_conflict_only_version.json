@@ -1,0 +1,7 @@
+{
+  "error_code": "CONFLICT",
+  "error_messages": [
+    "You may not DELETE the only version of a cookbook. A cookbook must have at least one version."
+  ],
+  "error": "You may not DELETE the only version of a cookbook. A cookbook must have at least one version."
+}

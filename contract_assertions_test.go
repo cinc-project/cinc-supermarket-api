@@ -159,7 +159,52 @@ func assertUniverse(t *testing.T, u supermarket.Universe) {
 			if uv.LocationPath == "" {
 				t.Errorf("Universe[%q][%q].LocationPath is empty", name, ver)
 			}
+			if !strings.HasSuffix(uv.DownloadURL, "/download") {
+				t.Errorf("Universe[%q][%q].DownloadURL = %q, want the tarball's /download URL", name, ver, uv.DownloadURL)
+			}
 			return // one entry is enough; the map is large.
 		}
+	}
+}
+
+func assertContingents(t *testing.T, got []supermarket.Contingent, label string) {
+	t.Helper()
+	if len(got) == 0 {
+		t.Fatalf("%s: no contingents decoded", label)
+	}
+	for i, c := range got {
+		if c.Name == "" || c.Version == "" {
+			t.Errorf("%s: [%d] = %+v, want name and version", label, i, c)
+		}
+		if !strings.Contains(c.URL, "/versions/") {
+			t.Errorf("%s: [%d].URL = %q, want a cookbook version URL", label, i, c.URL)
+		}
+	}
+}
+
+func assertDeprecatedWithReplacement(t *testing.T, cb *supermarket.Cookbook) {
+	t.Helper()
+	if !cb.Deprecated {
+		t.Fatalf("%s: Deprecated = false, want true", cb.Name)
+	}
+	if !strings.Contains(cb.Replacement, "/cookbooks/") {
+		t.Errorf("%s: Replacement = %q, want the successor cookbook's URL", cb.Name, cb.Replacement)
+	}
+}
+
+func assertHealth(t *testing.T, h *supermarket.Health) {
+	t.Helper()
+	if h.Status == "" {
+		t.Error("Health.Status is empty")
+	}
+	for name, status := range map[string]string{
+		"postgresql": h.PostgreSQL.Status, "sidekiq": h.Sidekiq.Status, "redis": h.Redis.Status,
+	} {
+		if status == "" {
+			t.Errorf("Health.%s.Status is empty; the subsystem block did not decode", name)
+		}
+	}
+	if len(h.Features) == 0 {
+		t.Error("Health.Features is empty; the feature flags did not decode")
 	}
 }

@@ -36,7 +36,8 @@ type UserCookbooks struct {
 // UserCookbooks, Supermarket maps each tool name to its API URL and omits
 // the key when there are none.
 type UserTools struct {
-	Owns map[string]string `json:"owns"`
+	Owns         map[string]string `json:"owns"`
+	Collaborates map[string]string `json:"collaborates"`
 }
 
 // UsersService accesses the /users endpoints.

@@ -1,0 +1,49 @@
+{
+  "name": "mongodb",
+  "maintainer": "thekorn",
+  "description": "Installs and configures mongodb",
+  "category": "Databases",
+  "latest_version": "https://supermarket.chef.io/api/v1/cookbooks/mongodb/versions/0.16.2",
+  "external_url": "",
+  "source_url": "",
+  "issues_url": "",
+  "average_rating": null,
+  "created_at": "2011-09-02T14:50:09.000Z",
+  "updated_at": "2017-03-24T19:05:08.844Z",
+  "up_for_adoption": null,
+  "deprecated": true,
+  "replacement": "https://supermarket.chef.io/api/v1/cookbooks/sc-mongodb",
+  "versions": [
+    "https://supermarket.chef.io/api/v1/cookbooks/mongodb/versions/0.16.2",
+    "https://supermarket.chef.io/api/v1/cookbooks/mongodb/versions/0.16.1",
+    "https://supermarket.chef.io/api/v1/cookbooks/mongodb/versions/0.16.0",
+    "https://supermarket.chef.io/api/v1/cookbooks/mongodb/versions/0.15.2",
+    "https://supermarket.chef.io/api/v1/cookbooks/mongodb/versions/0.15.1",
+    "https://supermarket.chef.io/api/v1/cookbooks/mongodb/versions/0.13.7",
+    "https://supermarket.chef.io/api/v1/cookbooks/mongodb/versions/0.13.6",
+    "https://supermarket.chef.io/api/v1/cookbooks/mongodb/versions/0.13.4",
+    "https://supermarket.chef.io/api/v1/cookbooks/mongodb/versions/0.13.3",
+    "https://supermarket.chef.io/api/v1/cookbooks/mongodb/versions/0.11.0",
+    "https://supermarket.chef.io/api/v1/cookbooks/mongodb/versions/0.9.0"
+  ],
+  "metrics": {
+    "downloads": {
+      "total": 18305631,
+      "versions": {
+        "0.11.0": 1261975,
+        "0.13.3": 1259492,
+        "0.13.4": 1261039,
+        "0.13.6": 1259571,
+        "0.13.7": 1342566,
+        "0.15.1": 1259462,
+        "0.15.2": 1262877,
+        "0.16.0": 1263229,
+        "0.16.1": 2210057,
+        "0.16.2": 4665807,
+        "0.9.0": 1259558
+      }
+    },
+    "followers": 209,
+    "collaborators": 2
+  }
+}

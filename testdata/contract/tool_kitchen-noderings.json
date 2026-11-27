@@ -1,0 +1,10 @@
+{
+  "name": "kitchen-noderings",
+  "slug": "kitchen-noderings",
+  "type": "kitchen_driver",
+  "source_url": "https://github.com/noderings/kitchen-noderings",
+  "description": "Test Kitchen driver for NodeRings: run your cookbook and infrastructure tests on NodeRings virtual machines. Install with: gem install kitchen-noderings",
+  "instructions": "gem install kitchen-noderings",
+  "owner": "noderings",
+  "up_for_adoption": null
+}

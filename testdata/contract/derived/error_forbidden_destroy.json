@@ -1,0 +1,6 @@
+{
+  "error_code": "FORBIDDEN",
+  "error_messages": [
+    "You are not authorized to destroy this cookbook. If you are the cookbook owner, this Supermarket has disabled artifact removal by owner per Chef RFC072. Contact the administrators if there are concerns."
+  ]
+}

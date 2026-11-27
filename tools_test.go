@@ -92,7 +92,7 @@ func TestToolsSearchUsesToolsSearchPath(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := newTestClient(t, srv, false)
 
-	if _, _, err := c.Tools.Search(context.Background(), SearchOptions{Q: "test"}); err != nil {
+	if _, _, err := c.Tools.Search(context.Background(), ToolSearchOptions{Q: "test"}); err != nil {
 		t.Fatalf("Tools.Search: %v", err)
 	}
 }

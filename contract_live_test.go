@@ -20,6 +20,8 @@ package supermarket_test
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -125,4 +127,72 @@ func TestContractLive_User(t *testing.T) {
 		t.Fatalf("Users.Get(sous-chefs): %v", err)
 	}
 	assertUser(t, u, "sous-chefs")
+}
+
+func TestContractLive_Contingent(t *testing.T) {
+	c, ctx, cancel := liveClient(t)
+	defer cancel()
+
+	// yum is a dependency of a large share of the catalog, so its contingent
+	// list is reliably non-empty.
+	got, _, err := c.Cookbooks.Contingent(ctx, "yum")
+	if err != nil {
+		t.Fatalf("Contingent(yum): %v", err)
+	}
+	assertContingents(t, got, "live contingent yum")
+}
+
+func TestContractLive_DeprecatedCookbook(t *testing.T) {
+	c, ctx, cancel := liveClient(t)
+	defer cancel()
+
+	// mongodb was deprecated in favour of sc-mongodb and has stayed that way.
+	cb, _, err := c.Cookbooks.Get(ctx, "mongodb")
+	if err != nil {
+		t.Fatalf("Cookbooks.Get(mongodb): %v", err)
+	}
+	assertDeprecatedWithReplacement(t, cb)
+}
+
+func TestContractLive_ToolsSearch(t *testing.T) {
+	c, ctx, cancel := liveClient(t)
+	defer cancel()
+
+	page, _, err := c.Tools.Search(ctx, supermarket.ToolSearchOptions{Q: "kitchen", Items: 3})
+	if err != nil {
+		t.Fatalf("Tools.Search: %v", err)
+	}
+	assertToolPage(t, page, "live tools search")
+	if len(page.Items) == 0 {
+		t.Fatal("tools search for kitchen returned nothing")
+	}
+	slug := page.Items[0].URL[strings.LastIndex(page.Items[0].URL, "/")+1:]
+	tool, _, err := c.Tools.Get(ctx, slug)
+	if err != nil {
+		t.Fatalf("Tools.Get(%s): %v", slug, err)
+	}
+	if tool.Slug != slug || tool.Type == "" {
+		t.Errorf("tool %s: slug=%q type=%q, want the slug back and a type", slug, tool.Slug, tool.Type)
+	}
+}
+
+func TestContractLive_Health(t *testing.T) {
+	c, ctx, cancel := liveClient(t)
+	defer cancel()
+
+	h, _, err := c.Health.Status(ctx)
+	if err != nil {
+		t.Fatalf("Health.Status: %v", err)
+	}
+	assertHealth(t, h)
+}
+
+func TestContractLive_NotFound(t *testing.T) {
+	c, ctx, cancel := liveClient(t)
+	defer cancel()
+
+	_, _, err := c.Cookbooks.Get(ctx, "this-cookbook-does-not-exist-contract-test")
+	if !errors.Is(err, supermarket.ErrNotFound) {
+		t.Fatalf("Get of a missing cookbook: err = %v, want ErrNotFound", err)
+	}
 }

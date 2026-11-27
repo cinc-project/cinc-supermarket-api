@@ -1,0 +1,46 @@
+{
+  "dynomite": {
+    "0.1.0": {
+      "location_type": "opscode",
+      "location_path": "https://supermarket.chef.io:443/api/v1",
+      "download_url": "https://supermarket.chef.io:443/api/v1/cookbooks/dynomite/versions/0.1.0/download",
+      "dependencies": {
+        "runit": ">= 0.0.0",
+        "git": ">= 0.0.0",
+        "ruby": ">= 0.0.0",
+        "erlang": ">= 0.0.0"
+      }
+    },
+    "0.2.2": {
+      "location_type": "opscode",
+      "location_path": "https://supermarket.chef.io:443/api/v1",
+      "download_url": "https://supermarket.chef.io:443/api/v1/cookbooks/dynomite/versions/0.2.2/download",
+      "dependencies": {
+        "runit": ">= 0.0.0",
+        "git": ">= 0.0.0",
+        "ruby": ">= 0.0.0",
+        "erlang": ">= 0.0.0"
+      }
+    }
+  },
+  "django": {
+    "0.7.0": {
+      "location_type": "opscode",
+      "location_path": "https://supermarket.chef.io:443/api/v1",
+      "download_url": "https://supermarket.chef.io:443/api/v1/cookbooks/django/versions/0.7.0/download",
+      "dependencies": {
+        "python": ">= 0.0.0",
+        "apache2": ">= 0.0.0"
+      }
+    },
+    "0.8.0": {
+      "location_type": "opscode",
+      "location_path": "https://supermarket.chef.io:443/api/v1",
+      "download_url": "https://supermarket.chef.io:443/api/v1/cookbooks/django/versions/0.8.0/download",
+      "dependencies": {
+        "python": ">= 0.0.0",
+        "apache2": ">= 0.0.0"
+      }
+    }
+  }
+}

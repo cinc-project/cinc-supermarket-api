@@ -292,13 +292,13 @@ func TestCookbooksShareSendsMultipartAndIsSigned(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = io.WriteString(w, `{"name":"apache2","category":"Web Servers"}`)
+		_, _ = w.Write(fixture(t, "derived/share_created.json"))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	c := newTestClient(t, srv, true)
 
-	cb, _, err := c.Cookbooks.Share(context.Background(), "apache2", "Web Servers", bytes.NewReader([]byte("FAKE-TAR")))
+	res, _, err := c.Cookbooks.Share(context.Background(), "apache2", "Web Servers", bytes.NewReader([]byte("FAKE-TAR")))
 	if err != nil {
 		t.Fatalf("Share: %v", err)
 	}
@@ -318,8 +318,8 @@ func TestCookbooksShareSendsMultipartAndIsSigned(t *testing.T) {
 	if string(gotTarball) != "FAKE-TAR" {
 		t.Errorf("tarball = %q", gotTarball)
 	}
-	if cb.Name != "apache2" {
-		t.Errorf("response cookbook = %+v", cb)
+	if !strings.HasSuffix(res.URI, "/cookbooks/apache2") {
+		t.Errorf("URI = %q, want the shared cookbook's URL", res.URI)
 	}
 }
 
@@ -346,7 +346,7 @@ func TestCookbooksShareContentHashCoversTarballOnly(t *testing.T) {
 		gotFullBody = body
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = io.WriteString(w, `{"name":"apache2"}`)
+		_, _ = w.Write(fixture(t, "derived/share_created.json"))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -412,7 +412,7 @@ func TestCookbooksDeleteSignsRequest(t *testing.T) {
 		}
 		sign = r.Header.Get("X-Ops-Sign")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"name":"apache2"}`)
+		_, _ = w.Write(fixture(t, "derived/share_created.json"))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -559,7 +559,7 @@ func TestCookbooksShareWithEmptyTarballStillBuildsBody(t *testing.T) {
 				gotTarball, _ = io.ReadAll(part)
 			}
 		}
-		_, _ = io.WriteString(w, `{"name":"apache2"}`)
+		_, _ = w.Write(fixture(t, "derived/share_created.json"))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -586,26 +586,5 @@ func TestCookbooksWriteOpsAllRefuseWithoutCredentials(t *testing.T) {
 	}
 	if _, _, err := c.Cookbooks.DeleteVersion(context.Background(), "x", "1.0.0"); !errors.Is(err, ErrUnauthenticatedWrite) {
 		t.Errorf("DeleteVersion err = %v, want ErrUnauthenticatedWrite", err)
-	}
-}
-
-func TestCookbooksContingentReturnsList(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/cookbooks/apache2/contingent", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `[
-			{"cookbook_name":"my-stack","cookbook":"u","cookbook_description":"d","cookbook_maintainer":"alice"}
-		]`)
-	})
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	c := newTestClient(t, srv, false)
-
-	got, _, err := c.Cookbooks.Contingent(context.Background(), "apache2")
-	if err != nil {
-		t.Fatalf("Contingent: %v", err)
-	}
-	if len(got) != 1 || got[0].Name != "my-stack" {
-		t.Errorf("got %+v", got)
 	}
 }
