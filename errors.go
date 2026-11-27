@@ -28,6 +28,55 @@ var (
 	ErrRateLimited = errors.New("supermarket: rate limited")
 )
 
+// Reason sentinels narrow a broad sentinel to one specific failure that
+// needs its own fix. Each also matches its broad sentinel, so a caller
+// checking errors.Is(err, ErrUnauthorized) or errors.Is(err, ErrInvalidData)
+// keeps working. They are recognised from Supermarket's own message text
+// (upstream config/locales/en.yml), which this package matches so callers
+// don't have to.
+var (
+	// ErrVersionExists matches an upload of a cookbook version that is
+	// already published (400 INVALID_DATA, "nginx (1.2.0) already exists.
+	// A cookbook's version number must be unique."). Bump the version in
+	// metadata.rb to publish again. It also matches ErrInvalidData.
+	ErrVersionExists error = &reasonError{"supermarket: cookbook version already exists", ErrInvalidData}
+
+	// ErrUnknownUser matches an AUTHENTICATION_FAILED response for a
+	// username (the X-Ops-Userid header) that has no Supermarket account
+	// ("Could not find user 'name'."). It also matches ErrUnauthorized.
+	ErrUnknownUser error = &reasonError{"supermarket: unknown user", ErrUnauthorized}
+
+	// ErrNoPublicKey matches an AUTHENTICATION_FAILED response for a user
+	// who exists but has no public key on file, because they have never
+	// logged in to the Supermarket web UI and linked their Chef account.
+	// Logging in once fixes it. It also matches ErrUnauthorized.
+	ErrNoPublicKey error = &reasonError{"supermarket: no public key on file", ErrUnauthorized}
+
+	// ErrSignatureRejected matches an AUTHENTICATION_FAILED response for a
+	// well-formed signed request that failed verification ("invalid
+	// public/private key pair"). Supermarket sends the same message for
+	// every verification failure, so this covers a private key that doesn't
+	// match the public key on file, a clock more than 15 minutes off from
+	// the server's, and a body that doesn't match its content hash; the
+	// response cannot tell them apart. It also matches ErrUnauthorized.
+	ErrSignatureRejected error = &reasonError{"supermarket: signature rejected (key mismatch or clock skew)", ErrUnauthorized}
+
+	// ErrInvalidSignedRequest matches an AUTHENTICATION_FAILED response for
+	// a request whose signing headers Supermarket could not parse, such as
+	// a missing header or an unparseable timestamp ("Authentication failed
+	// due to an invalid signed request."). It also matches ErrUnauthorized.
+	ErrInvalidSignedRequest error = &reasonError{"supermarket: invalid signed request", ErrUnauthorized}
+)
+
+// reasonError is a sentinel that also matches a broader sentinel.
+type reasonError struct {
+	msg    string
+	parent error
+}
+
+func (e *reasonError) Error() string { return e.msg }
+func (e *reasonError) Unwrap() error { return e.parent }
+
 // ErrorResponse describes a non-2xx response from Supermarket.
 type ErrorResponse struct {
 	Method     string   // request method
@@ -51,8 +100,13 @@ func (e *ErrorResponse) Error() string {
 }
 
 // Unwrap maps the error_code (preferred) or HTTP status to a sentinel
-// error for errors.Is.
+// error for errors.Is. When the message identifies a specific failure, it
+// returns that reason sentinel (such as ErrVersionExists or ErrUnknownUser),
+// which in turn matches the broad sentinel for the code.
 func (e *ErrorResponse) Unwrap() error {
+	if r := e.reason(); r != nil {
+		return r
+	}
 	switch e.Code {
 	case "NOT_FOUND":
 		return ErrNotFound
@@ -76,6 +130,42 @@ func (e *ErrorResponse) Unwrap() error {
 		return ErrConflict
 	case 429:
 		return ErrRateLimited
+	}
+	return nil
+}
+
+// Fragments of Supermarket's api.error_messages locale strings (upstream
+// config/locales/en.yml) that identify a reason. Interpolated values are
+// left out: the username, the host and the cookbook name and version.
+const (
+	msgVersionNotUnique     = ") already exists. A cookbook's version number must be unique."
+	msgInvalidUsername      = "Could not find user '"
+	msgMissingPublicKey     = "Before you can perform knife activities that require authentication"
+	msgKeyPairRejected      = "Authentication failed due to an invalid public/private key pair."
+	msgInvalidSignedRequest = "Authentication failed due to an invalid signed request."
+)
+
+// reason returns the reason sentinel the response's message identifies, or
+// nil when it matches none.
+func (e *ErrorResponse) reason() error {
+	for _, m := range e.Messages {
+		switch e.Code {
+		case "INVALID_DATA":
+			if strings.HasSuffix(m, msgVersionNotUnique) {
+				return ErrVersionExists
+			}
+		case "AUTHENTICATION_FAILED":
+			switch {
+			case strings.HasPrefix(m, msgInvalidUsername):
+				return ErrUnknownUser
+			case strings.HasPrefix(m, msgMissingPublicKey):
+				return ErrNoPublicKey
+			case strings.HasPrefix(m, msgKeyPairRejected):
+				return ErrSignatureRejected
+			case strings.HasPrefix(m, msgInvalidSignedRequest):
+				return ErrInvalidSignedRequest
+			}
+		}
 	}
 	return nil
 }

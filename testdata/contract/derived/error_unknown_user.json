@@ -1,0 +1,6 @@
+{
+  "error_code": "AUTHENTICATION_FAILED",
+  "error_messages": [
+    "Could not find user 'nobody'."
+  ]
+}

@@ -116,6 +116,25 @@ class of failure rather than the HTTP status. The sentinel is derived from
 `error_code` first (production returns 404 with `error_code=NOT_FOUND` for a
 missing resource) and falls back to the status code.
 
+Some failures share a code but need different fixes. For those, a narrower
+sentinel also matches, alongside the broad one:
+
+| Sentinel | Also matches | Supermarket's message |
+| -------- | ------------ | --------------------- |
+| `ErrVersionExists` | `ErrInvalidData` | `nginx (1.2.0) already exists. A cookbook's version number must be unique.` |
+| `ErrUnknownUser` | `ErrUnauthorized` | `Could not find user 'name'.` |
+| `ErrNoPublicKey` | `ErrUnauthorized` | `Before you can perform knife activities that require authentication, you must log into ...` |
+| `ErrSignatureRejected` | `ErrUnauthorized` | `Authentication failed due to an invalid public/private key pair. ...` |
+| `ErrInvalidSignedRequest` | `ErrUnauthorized` | `Authentication failed due to an invalid signed request.` |
+
+`ErrSignatureRejected` covers a wrong key, a clock more than 15 minutes off
+and a body that doesn't match its content hash: Supermarket sends the same
+message for all three, so the client can't separate them.
+
+`ParseKey` and `LoadKeyFile` return an error matching `ErrInvalidKey` when the
+data isn't a PEM-encoded RSA private key. A `LoadKeyFile` error for a file it
+can't read wraps the `fs` error instead (`fs.ErrNotExist`, `fs.ErrPermission`).
+
 ## Testing
 
 `go test ./...` runs the unit suite: it's fast, deterministic, and needs
