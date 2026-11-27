@@ -1,0 +1,6 @@
+{
+  "error_code": "INVALID_DATA",
+  "error_messages": [
+    "nginx (1.2.0) already exists. A cookbook's version number must be unique."
+  ]
+}

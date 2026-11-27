@@ -7,6 +7,8 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,5 +103,49 @@ func TestLoadKeyFileRoundTrip(t *testing.T) {
 	}
 	if loaded.N.Cmp(rk.N) != 0 {
 		t.Error("loaded key does not match the one on disk")
+	}
+}
+
+func TestParseKeyInvalidContentMatchesErrInvalidKey(t *testing.T) {
+	ek, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecDER, err := x509.MarshalPKCS8PrivateKey(ek)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string][]byte{
+		"empty":          nil,
+		"not PEM":        []byte("not a key"),
+		"garbage DER":    mustPEM(t, &pem.Block{Type: "PRIVATE KEY", Bytes: []byte("not-actually-der")}),
+		"non-RSA PKCS#8": mustPEM(t, &pem.Block{Type: "PRIVATE KEY", Bytes: ecDER}),
+	}
+	for name, data := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseKey(data)
+			if !errors.Is(err, ErrInvalidKey) {
+				t.Errorf("err = %v, want errors.Is(err, ErrInvalidKey); callers can't tell a bad key from other failures", err)
+			}
+		})
+	}
+}
+
+func TestLoadKeyFileSeparatesFileErrorsFromBadKeys(t *testing.T) {
+	_, err := LoadKeyFile(filepath.Join(t.TempDir(), "nope.pem"))
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("missing file: err = %v, want errors.Is(err, fs.ErrNotExist)", err)
+	}
+	if errors.Is(err, ErrInvalidKey) {
+		t.Errorf("missing file: err = %v matches ErrInvalidKey; a caller would blame the key's content", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "key.pem")
+	if err := os.WriteFile(path, []byte("not a key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = LoadKeyFile(path)
+	if !errors.Is(err, ErrInvalidKey) {
+		t.Errorf("bad content: err = %v, want errors.Is(err, ErrInvalidKey)", err)
 	}
 }

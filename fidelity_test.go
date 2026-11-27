@@ -227,3 +227,56 @@ func TestErrorCodesMapToSentinels(t *testing.T) {
 		}
 	})
 }
+
+// TestShareFailuresMapToReasons covers the failures that share a broad
+// error_code but need different fixes. Each one must match its own reason
+// sentinel, still match the broad sentinel callers already check, and match
+// no other reason (so a caller's switch picks exactly one branch).
+func TestShareFailuresMapToReasons(t *testing.T) {
+	reasons := []error{
+		ErrVersionExists, ErrUnknownUser, ErrNoPublicKey,
+		ErrSignatureRejected, ErrInvalidSignedRequest,
+	}
+	cases := []struct {
+		name    string
+		status  int
+		fixture string
+		reason  error
+		broad   error
+	}{
+		{"version already published", 400, "derived/error_version_exists.json", ErrVersionExists, ErrInvalidData},
+		{"unknown user", 401, "derived/error_unknown_user.json", ErrUnknownUser, ErrUnauthorized},
+		{"no public key on file", 401, "derived/error_no_public_key.json", ErrNoPublicKey, ErrUnauthorized},
+		{"key pair or clock rejected", 401, "derived/error_bad_key.json", ErrSignatureRejected, ErrUnauthorized},
+		{"malformed signed request", 400, "derived/error_authentication_failed.json", ErrInvalidSignedRequest, ErrUnauthorized},
+		{"other invalid data", 400, "derived/error_missing_tarball.json", nil, ErrInvalidData},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, _ := serveFixture(t, "/api/v1/cookbooks", tc.status, tc.fixture)
+			c := newTestClient(t, srv, true)
+			_, _, err := c.Cookbooks.Share(context.Background(), "nginx", "Other", strings.NewReader("tar"))
+			if !errors.Is(err, tc.broad) {
+				t.Errorf("err = %v no longer matches %v; existing callers checking it would break", err, tc.broad)
+			}
+			for _, r := range reasons {
+				if got, want := errors.Is(err, r), r == tc.reason; got != want {
+					t.Errorf("errors.Is(err, %v) = %v, want %v; a caller would give the wrong fix for %q", r, got, want, err)
+				}
+			}
+		})
+	}
+}
+
+// TestReasonSentinelsWrapBroadSentinels lets a caller hold a reason sentinel
+// on its own (for instance from a wrapped error) and still classify it.
+func TestReasonSentinelsWrapBroadSentinels(t *testing.T) {
+	if !errors.Is(ErrVersionExists, ErrInvalidData) {
+		t.Error("ErrVersionExists does not match ErrInvalidData")
+	}
+	for _, r := range []error{ErrUnknownUser, ErrNoPublicKey, ErrSignatureRejected, ErrInvalidSignedRequest} {
+		if !errors.Is(r, ErrUnauthorized) {
+			t.Errorf("%v does not match ErrUnauthorized", r)
+		}
+	}
+}

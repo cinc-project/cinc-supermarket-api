@@ -1,0 +1,6 @@
+{
+  "error_code": "AUTHENTICATION_FAILED",
+  "error_messages": [
+    "Before you can perform knife activities that require authentication, you must log into https://supermarket.chef.io and grant it permission to access your Chef account information."
+  ]
+}
