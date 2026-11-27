@@ -10,20 +10,31 @@ A Go client for the [Chef Supermarket API](https://docs.chef.io/supermarket/supe
 
 Read endpoints are anonymous:
 
-    c, _ := supermarket.NewClient(supermarket.Config{})
-    cb, _, _ := c.Cookbooks.Get(context.Background(), "apache2")
+    c, err := supermarket.NewClient(supermarket.Config{})
+    if err != nil {
+        return err
+    }
+    cb, _, err := c.Cookbooks.Get(ctx, "apache2")
+    if err != nil {
+        return err
+    }
 
 Write endpoints (share, delete) use the Chef mixlib-authentication
 signed-header protocol (version 1.1, SHA-1 — the version the public
 Supermarket accepts). The credentials are the Supermarket username and the RSA
 private key registered on that user's Supermarket profile:
 
-    key, _ := supermarket.LoadKeyFile("/home/me/.chef/me.pem")
-    c, _ := supermarket.NewClient(supermarket.Config{
-        Username: "me",
-        Key:      key,
-    })
-    c.Cookbooks.Share(ctx, "apache2", "Web Servers", tarball)
+    key, err := supermarket.LoadKeyFile("/home/me/.chef/me.pem")
+    if err != nil {
+        return err
+    }
+    c, err := supermarket.NewClient(supermarket.Config{Username: "me", Key: key})
+    if err != nil {
+        return err
+    }
+    if _, _, err := c.Cookbooks.Share(ctx, "apache2", "Web Servers", tarball); err != nil {
+        return err
+    }
 
 A `Client` with no credentials refuses write calls with
 `ErrUnauthenticatedWrite` without contacting the server.
@@ -31,12 +42,20 @@ A `Client` with no credentials refuses write calls with
 A private Supermarket whose certificate comes from an internal CA is reached
 by trusting that CA, which keeps certificate verification on:
 
-    pem, _ := os.ReadFile("/etc/ssl/internal-ca.pem")
+    pem, err := os.ReadFile("/etc/ssl/internal-ca.pem")
+    if err != nil {
+        return err
+    }
     pool := x509.NewCertPool()
-    pool.AppendCertsFromPEM(pem)
-    c, _ := supermarket.NewClient(
+    if !pool.AppendCertsFromPEM(pem) {
+        return errors.New("no certificates in internal-ca.pem")
+    }
+    c, err := supermarket.NewClient(
         supermarket.Config{BaseURL: "https://supermarket.example.internal"},
         supermarket.WithRootCAs(pool))
+    if err != nil {
+        return err
+    }
 
 `WithSkipTLSVerify(true)` turns verification off entirely. It is off by
 default and meant for local testing only.
@@ -60,6 +79,10 @@ full semver dependency: `CompareVersions(a, b)` orders two versions,
 `LatestVersion(versions)` picks the newest, and `VersionFromURL(u)`
 pulls the dotted version out of a `/versions/<v>` URL (Supermarket
 encodes the dots as underscores).
+
+Runnable examples, including pagination, `ErrNotFound` handling and
+streaming `/universe`, are on
+[pkg.go.dev](https://pkg.go.dev/github.com/cinc-project/cinc-supermarket-api#pkg-examples).
 
 ## Coverage
 
