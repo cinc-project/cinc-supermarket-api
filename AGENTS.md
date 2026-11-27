@@ -72,17 +72,19 @@ outside resources and degrade gracefully.
 
 These have each caused a real bug. Check them before "modernizing" anything.
 
-- **Sign version is 1.1 (SHA-1), not 1.3 (SHA-256).** The public
-  Supermarket's verifier only accepts 1.0/1.1; a 1.3 signature is valid
-  mixlib output that the server rejects, and every signed upload 401s.
-  There is an always-on guard test asserting this. Don't "upgrade" it
-  without a Supermarket that accepts 1.3.
+- **Sign version is 1.1 (SHA-1), not 1.3 (SHA-256).** Signing with 1.3 got
+  a 401 on every share against supermarket.chef.io in production. The cause
+  is unknown: upstream mixlib-authentication's verifier does handle 1.3, so
+  it is not a mixlib version allow-list. An always-on guard test pins 1.0/1.1.
+  Don't "upgrade" it without first proving a 1.3 share succeeds against the
+  target Supermarket.
 - **The share upload hashes the tarball alone.** For multipart file
   uploads, `X-Ops-Content-Hash` covers only the uploaded file's bytes, not
   the whole multipart envelope. That is what `request.signBody` exists for.
-- **Supermarket returns 400 with `error_code=NOT_FOUND`, not 404.** Match
-  on the sentinels with `errors.Is(err, ErrNotFound)`, never on the status
-  code.
+- **Match errors on the sentinels, not the status code.** Production returns
+  404 with `error_code=NOT_FOUND` for a missing resource; `ErrorResponse.Unwrap`
+  maps the `error_code` first and the status second. Use
+  `errors.Is(err, ErrNotFound)`.
 - **A `Page` with zero items is terminal** even when `Total` claims more.
   `HasMore` enforces this; without it a pagination loop spins forever.
 - **`http.Client.Timeout` is a whole-transaction deadline.** The timer keeps

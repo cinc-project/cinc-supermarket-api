@@ -89,8 +89,9 @@ encodes the dots as underscores).
 Non-2xx responses are wrapped in an `*ErrorResponse` that decodes
 Supermarket's `{error_messages, error_code}` envelope. Use
 `errors.Is(err, supermarket.ErrNotFound)` (and friends) to check the
-class of failure without dealing with the fact that Supermarket
-returns 400 with `error_code=NOT_FOUND` rather than 404.
+class of failure rather than the HTTP status. The sentinel is derived from
+`error_code` first (production returns 404 with `error_code=NOT_FOUND` for a
+missing resource) and falls back to the status code.
 
 ## Testing
 
@@ -98,10 +99,9 @@ returns 400 with `error_code=NOT_FOUND` rather than 404.
 neither network nor Ruby. It includes:
 
 - **An always-on signing-version guard** (`internal/signing`) asserting we
-  sign with a version the public Supermarket verifier accepts (`1.0`/`1.1`).
-  This is the cheap insurance against the v1.3-class bug where every signed
-  upload 401'd: a 1.3 signature is valid mixlib output, but the server won't
-  accept it.
+  sign with `1.0` or `1.1`. Signing with `1.3` got a 401 on every share
+  against supermarket.chef.io in production; the cause is unknown, so the
+  guard pins the versions observed to work.
 - **A contract replay suite** that decodes recorded production responses under
   `testdata/contract/` through the public types, so a decoder regression
   fails CI deterministically.
@@ -111,8 +111,8 @@ stays fast:
 
 - **Gem-backed verifier test** (`internal/signing`): runs our signed headers
   through mixlib-authentication's real server-side
-  `SignatureVerification` (the gold standard) and proves a synthetic v1.3
-  request is rejected. It needs Ruby plus the `mixlib-authentication` gem
+  `SignatureVerification` (the gold standard). Its 1.3 case only exercises
+  the test harness's own version gate, not mixlib or Supermarket. It needs Ruby plus the `mixlib-authentication` gem
   (`gem install mixlib-authentication`); without them it skips cleanly rather
   than failing.
 

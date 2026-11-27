@@ -7,9 +7,10 @@ import (
 	"strings"
 )
 
-// Sentinel errors for use with errors.Is. Supermarket returns 400 for
-// "not found" rather than 404; Unwrap normalizes both into ErrNotFound
-// using the response's error_code field.
+// Sentinel errors for use with errors.Is. Supermarket reports a missing
+// resource as 404 with error_code NOT_FOUND; Unwrap maps the error_code
+// (and, failing that, the status) to ErrNotFound, so match on the sentinel
+// rather than the status code.
 var (
 	ErrNotFound             = errors.New("supermarket: not found")
 	ErrUnauthorized         = errors.New("supermarket: unauthorized")
