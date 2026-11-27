@@ -1,0 +1,19 @@
+{
+  "contingents": [
+    {
+      "name": "CVE-2015-0235",
+      "version": "1.0",
+      "url": "https://supermarket.chef.io/api/v1/cookbooks/cve-2015-0235/versions/1.0"
+    },
+    {
+      "name": "CVE-2015-0235",
+      "version": "1.1",
+      "url": "https://supermarket.chef.io/api/v1/cookbooks/cve-2015-0235/versions/1.1"
+    },
+    {
+      "name": "abiquo",
+      "version": "0.3.2",
+      "url": "https://supermarket.chef.io/api/v1/cookbooks/abiquo/versions/0.3.2"
+    }
+  ]
+}

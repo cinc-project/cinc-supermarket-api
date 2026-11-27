@@ -14,18 +14,22 @@ import (
 
 // Cookbook is the full cookbook representation returned by GET /cookbooks/:name.
 type Cookbook struct {
-	Name          string          `json:"name"`
-	Maintainer    string          `json:"maintainer"`
-	Description   string          `json:"description"`
-	Category      string          `json:"category"`
-	LatestVersion string          `json:"latest_version"`
-	ExternalURL   string          `json:"external_url"`
-	SourceURL     string          `json:"source_url"`
-	IssuesURL     string          `json:"issues_url"`
-	AverageRating *float64        `json:"average_rating"`
-	CreatedAt     time.Time       `json:"created_at"`
-	UpdatedAt     time.Time       `json:"updated_at"`
-	Deprecated    bool            `json:"deprecated"`
+	Name          string    `json:"name"`
+	Maintainer    string    `json:"maintainer"`
+	Description   string    `json:"description"`
+	Category      string    `json:"category"`
+	LatestVersion string    `json:"latest_version"`
+	ExternalURL   string    `json:"external_url"`
+	SourceURL     string    `json:"source_url"`
+	IssuesURL     string    `json:"issues_url"`
+	AverageRating *float64  `json:"average_rating"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	Deprecated    bool      `json:"deprecated"`
+	// Replacement is the API URL of the cookbook suggested in place of a
+	// deprecated one. Supermarket sends it only when Deprecated is true and
+	// a replacement was named; otherwise it is empty.
+	Replacement   string          `json:"replacement"`
 	UpForAdoption bool            `json:"up_for_adoption"`
 	Versions      []string        `json:"versions"`
 	Metrics       CookbookMetrics `json:"metrics"`
@@ -52,6 +56,30 @@ type CookbookSummary struct {
 	URL         string `json:"cookbook"`
 	Maintainer  string `json:"cookbook_maintainer"`
 }
+
+// Contingent is one cookbook version that depends on the cookbook passed to
+// Cookbooks.Contingent.
+type Contingent struct {
+	Name    string `json:"name"`    // name of the dependent cookbook
+	Version string `json:"version"` // version of the dependent cookbook
+	URL     string `json:"url"`     // API URL of that cookbook version
+}
+
+// ShareResult is the response to a successful Cookbooks.Share.
+type ShareResult struct {
+	// URI is the API URL of the shared cookbook, e.g.
+	// https://supermarket.chef.io/api/v1/cookbooks/apache2.
+	URI string `json:"uri"`
+}
+
+// Cookbook list orderings for ListOptions.Order.
+const (
+	OrderByName          = "by_name"
+	OrderRecentlyUpdated = "recently_updated"
+	OrderRecentlyAdded   = "recently_added"
+	OrderMostDownloaded  = "most_downloaded"
+	OrderMostFollowed    = "most_followed"
+)
 
 // CookbookVersion is the full version representation returned by
 // GET /cookbooks/:name/versions/:version.
@@ -83,12 +111,16 @@ type QualityMetric struct {
 type ListOptions struct {
 	Start int
 	Items int
-	// Order, when set, is one of: recently_updated, recently_added,
-	// most_downloaded, most_followed.
+	// Order, when set, is one of the Order* constants. The server sorts
+	// by name when it is empty or unrecognized, and always lists
+	// deprecated cookbooks after the rest.
 	Order string
 	// User, when set, restricts the result set to cookbooks owned by
 	// that Supermarket username.
 	User string
+	// Platforms, when set, restricts the result set to cookbooks whose
+	// versions declare support for any of these platforms (e.g. "debian").
+	Platforms []string
 }
 
 // CookbooksService accesses the /cookbooks endpoints.
@@ -103,6 +135,9 @@ func (s *CookbooksService) List(ctx context.Context, opts ListOptions) (Page[Coo
 	}
 	if opts.User != "" {
 		q.Set("user", opts.User)
+	}
+	for _, p := range opts.Platforms {
+		q.Add("platforms[]", p)
 	}
 	return doJSON[Page[CookbookSummary]](ctx, s.client, request{
 		method: http.MethodGet,
@@ -125,15 +160,22 @@ func (s *CookbooksService) Get(ctx context.Context, name string) (*Cookbook, *Re
 	return &cb, resp, nil
 }
 
-// Contingent returns cookbooks that depend on the named cookbook.
-func (s *CookbooksService) Contingent(ctx context.Context, name string) ([]CookbookSummary, *Response, error) {
+// Contingent returns the cookbook versions that depend on the named
+// cookbook. A cookbook nothing depends on yields an empty slice.
+func (s *CookbooksService) Contingent(ctx context.Context, name string) ([]Contingent, *Response, error) {
 	if err := requireArg("cookbook name", name); err != nil {
 		return nil, nil, err
 	}
-	return doJSON[[]CookbookSummary](ctx, s.client, request{
+	out, resp, err := doJSON[struct {
+		Contingents []Contingent `json:"contingents"`
+	}](ctx, s.client, request{
 		method: http.MethodGet,
 		path:   "/api/v1/cookbooks/" + url.PathEscape(name) + "/contingent",
 	})
+	if err != nil {
+		return nil, resp, err
+	}
+	return out.Contingents, resp, nil
 }
 
 // GetVersion returns a single cookbook version. The version may be
@@ -184,7 +226,10 @@ func (s *CookbooksService) Download(ctx context.Context, name, version string) (
 // the cookbook directory (must contain metadata.json at its root);
 // category is the Supermarket category string (e.g. "Web Servers").
 // Requires Username and Key on the Client.
-func (s *CookbooksService) Share(ctx context.Context, name, category string, tarball io.Reader) (*Cookbook, *Response, error) {
+//
+// Supermarket answers a successful share with only the cookbook's API URL,
+// returned as ShareResult.URI; fetch the cookbook with Get for its details.
+func (s *CookbooksService) Share(ctx context.Context, name, category string, tarball io.Reader) (*ShareResult, *Response, error) {
 	if err := requireArg("cookbook name", name); err != nil {
 		return nil, nil, err
 	}
@@ -195,7 +240,7 @@ func (s *CookbooksService) Share(ctx context.Context, name, category string, tar
 	if err != nil {
 		return nil, nil, err
 	}
-	cb, resp, err := doJSON[Cookbook](ctx, s.client, request{
+	res, resp, err := doJSON[ShareResult](ctx, s.client, request{
 		method:      http.MethodPost,
 		path:        "/api/v1/cookbooks",
 		body:        body,
@@ -208,7 +253,7 @@ func (s *CookbooksService) Share(ctx context.Context, name, category string, tar
 	if err != nil {
 		return nil, resp, err
 	}
-	return &cb, resp, nil
+	return &res, resp, nil
 }
 
 // Delete removes an entire cookbook from Supermarket. The caller must

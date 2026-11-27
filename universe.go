@@ -12,8 +12,13 @@ type Universe map[string]map[string]UniverseVersion
 
 // UniverseVersion is one entry in the universe graph.
 type UniverseVersion struct {
-	LocationPath string            `json:"location_path"`
-	LocationType string            `json:"location_type"` // "supermarket"
+	// LocationType is "opscode": Supermarket keeps the legacy value because
+	// Berkshelf matches on it.
+	LocationType string `json:"location_type"`
+	// LocationPath is the API base URL the version is served from.
+	LocationPath string `json:"location_path"`
+	// DownloadURL is the URL of this version's tarball.
+	DownloadURL  string            `json:"download_url"`
 	Dependencies map[string]string `json:"dependencies"`
 }
 

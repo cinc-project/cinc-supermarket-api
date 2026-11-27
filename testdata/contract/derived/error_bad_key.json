@@ -1,0 +1,6 @@
+{
+  "error_code": "AUTHENTICATION_FAILED",
+  "error_messages": [
+    "Authentication failed due to an invalid public/private key pair. If you have changed your keys recently try logging out and logging back in to Supermarket."
+  ]
+}

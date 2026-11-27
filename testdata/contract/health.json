@@ -1,0 +1,36 @@
+{
+  "status": "ok",
+  "supermarket": {
+    "expired_ocid_tokens": 25813
+  },
+  "sidekiq": {
+    "status": "reachable",
+    "latency": 0,
+    "queued_jobs": 0,
+    "scheduled_jobs": 0,
+    "retryable_jobs": 20,
+    "dead_jobs": 148,
+    "total_processed": 1919110,
+    "total_failed": 81454,
+    "active_workers": 0
+  },
+  "postgresql": {
+    "status": "reachable",
+    "waiting_on_lock": 151,
+    "connections": 153
+  },
+  "redis": {
+    "status": "reachable",
+    "uptime_in_seconds": 14126255,
+    "connected_clients": 261,
+    "used_memory": 16291304,
+    "used_memory_peak": 26195680
+  },
+  "features": {
+    "tools": true,
+    "fieri": true,
+    "announcement": true,
+    "github": true,
+    "no_crawl": false
+  }
+}

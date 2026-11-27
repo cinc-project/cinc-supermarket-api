@@ -20,6 +20,11 @@ var (
 	// when a caller passes a blank value for a required path segment such as
 	// a cookbook name or version.
 	ErrInvalidArgument = errors.New("supermarket: invalid argument")
+	// ErrConflict matches a 409, which Supermarket returns when deleting the
+	// only remaining version of a cookbook.
+	ErrConflict = errors.New("supermarket: conflict")
+	// ErrRateLimited matches a 429 that outlasted the client's retries.
+	ErrRateLimited = errors.New("supermarket: rate limited")
 )
 
 // ErrorResponse describes a non-2xx response from Supermarket.
@@ -50,12 +55,14 @@ func (e *ErrorResponse) Unwrap() error {
 	switch e.Code {
 	case "NOT_FOUND":
 		return ErrNotFound
-	case "UNAUTHORIZED":
+	case "UNAUTHORIZED", "AUTHENTICATION_FAILED":
 		return ErrUnauthorized
 	case "FORBIDDEN":
 		return ErrForbidden
-	case "INVALID_DATA":
+	case "INVALID_DATA", "MISSING_REQUIRED_DATA":
 		return ErrInvalidData
+	case "CONFLICT":
+		return ErrConflict
 	}
 	switch e.StatusCode {
 	case 401:
@@ -64,6 +71,10 @@ func (e *ErrorResponse) Unwrap() error {
 		return ErrForbidden
 	case 404:
 		return ErrNotFound
+	case 409:
+		return ErrConflict
+	case 429:
+		return ErrRateLimited
 	}
 	return nil
 }

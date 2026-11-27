@@ -3,8 +3,14 @@ package supermarket
 import "net/url"
 
 // Page is the envelope every Supermarket list/search response uses.
-// Items carries the actual result rows; Start and Total describe where
-// this slice sits inside the full result set.
+// Items carries the actual result rows; Start is the offset of the first.
+//
+// Total is only as good as the server makes it. Supermarket reports the
+// number of cookbooks on the whole server for Search.Cookbooks and for a
+// Cookbooks.List filtered by User or Platforms, and the size of the
+// returned page for Tools.Search. Only an unfiltered Cookbooks.List or
+// Tools.List reports a true total. A page with no items is the reliable
+// end-of-results signal.
 type Page[T any] struct {
 	Start int `json:"start"`
 	Total int `json:"total"`
