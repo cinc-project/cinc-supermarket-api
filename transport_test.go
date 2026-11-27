@@ -461,8 +461,8 @@ func TestStreamResponseExposesAnOpenBody(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = body.Close() })
 
-	if resp.HTTPResponse.Body != body {
-		t.Error("resp.HTTPResponse.Body is not the ReadCloser handed to the caller")
+	if resp.Body != body {
+		t.Error("resp.Body is not the ReadCloser handed to the caller")
 	}
 	got, err := io.ReadAll(body)
 	if err != nil {
@@ -669,7 +669,7 @@ func TestRetryAfterDelay(t *testing.T) {
 		if v != "" {
 			h.Set("Retry-After", v)
 		}
-		return &Response{HTTPResponse: &http.Response{Header: h}}
+		return &Response{Response: &http.Response{Header: h}}
 	}
 	tests := []struct {
 		name  string
@@ -683,6 +683,7 @@ func TestRetryAfterDelay(t *testing.T) {
 		{"negative", mk("-5"), 0, false},
 		{"garbage", mk("soon"), 0, false},
 		{"nil response", nil, 0, false},
+		{"response without http.Response", &Response{}, 0, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
