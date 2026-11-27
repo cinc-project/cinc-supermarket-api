@@ -41,6 +41,20 @@ by trusting that CA, which keeps certificate verification on:
 `WithSkipTLSVerify(true)` turns verification off entirely. It is off by
 default and meant for local testing only.
 
+The universe (every version of every cookbook with its dependencies) is tens
+of megabytes. `Universe.Entries` decodes it incrementally and yields one
+version at a time, so memory stays flat:
+
+    for e, err := range c.Universe.Entries(ctx) {
+        if err != nil {
+            return err // request, HTTP, decode or ctx error; iteration has stopped
+        }
+        fmt.Println(e.Cookbook, e.Version, e.Dependencies)
+    }
+
+Breaking out of the loop early closes the response body. There is no total
+request timeout on this path; bound it with `ctx`.
+
 Version helpers work on the version strings cookbooks return, without a
 full semver dependency: `CompareVersions(a, b)` orders two versions,
 `LatestVersion(versions)` picks the newest, and `VersionFromURL(u)`
@@ -66,6 +80,7 @@ encodes the dots as underscores).
 | Users    | `GET /api/v1/users/:username`                         | `Get`           |
 | Universe | `GET /universe`                                       | `Get`           |
 | Universe | `GET /universe` (streaming)                           | `GetStream`     |
+| Universe | `GET /universe` (one entry per version)               | `Entries`       |
 | Health   | `GET /api/v1/health`                                  | `Status`        |
 | Health   | `GET /api/v1/metrics`                                 | `Metrics`       |
 
